@@ -12,6 +12,7 @@ import (
 type MonitorRepository interface {
 	Create(ctx context.Context, m *monitor.Monitor) error
 	List(ctx context.Context) ([]*monitor.Monitor, error)
+	GetByID(ctx context.Context, id string) (*monitor.Monitor, error)
 }
 
 type MonitorHandler struct {
@@ -106,6 +107,23 @@ func (h *MonitorHandler) List(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		return
+	}
+}
+
+func (h *MonitorHandler) GetByID(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	m, err := h.repository.GetByID(r.Context(), id)
+	if err != nil {
+		http.Error(w, "monitor not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	if err := json.NewEncoder(w).Encode(newMonitorResponse(m)); err != nil {
 		http.Error(w, "failed to encode response", http.StatusInternalServerError)
 		return
 	}
