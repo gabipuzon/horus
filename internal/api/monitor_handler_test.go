@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -208,6 +209,108 @@ func TestListMonitors(t *testing.T) {
 			"expected name %q, got %q",
 			"Example",
 			response[0].Name,
+		)
+	}
+}
+
+func (f *fakeMonitorRepository) GetByID(
+	ctx context.Context,
+	id string,
+) (*monitor.Monitor, error) {
+	if f.created == nil {
+		return nil, errors.New("monitor not found")
+	}
+
+	if f.created.ID != id {
+		return nil, errors.New("monitor not found")
+	}
+
+	return f.created, nil
+}
+
+func TestGetMonitor(t *testing.T) {
+	repository := &fakeMonitorRepository{}
+
+	createdMonitor, err := monitor.New(
+		"Example",
+		"https://example.com",
+		60*time.Second,
+		5*time.Second,
+		200,
+	)
+	if err != nil {
+		t.Fatalf("failed to create monitor: %v", err)
+	}
+
+	repository.created = createdMonitor
+
+	handler := NewMonitorHandler(repository)
+
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/monitors/"+createdMonitor.ID,
+		nil,
+	)
+
+	request.SetPathValue("id", createdMonitor.ID)
+
+	recorder := httptest.NewRecorder()
+
+	handler.GetByID(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf(
+			"expected status %d, got %d",
+			http.StatusOK,
+			recorder.Code,
+		)
+	}
+
+	var response monitorResponse
+
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if response.ID != createdMonitor.ID {
+		t.Fatalf(
+			"expected ID %q, got %q",
+			createdMonitor.ID,
+			response.ID,
+		)
+	}
+
+	if response.Name != "Example" {
+		t.Fatalf(
+			"expected name %q, got %q",
+			"Example",
+			response.Name,
+		)
+	}
+}
+
+func TestGetMonitorNotFound(t *testing.T) {
+	repository := &fakeMonitorRepository{}
+
+	handler := NewMonitorHandler(repository)
+
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/monitors/missing",
+		nil,
+	)
+
+	request.SetPathValue("id", "missing")
+
+	recorder := httptest.NewRecorder()
+
+	handler.GetByID(recorder, request)
+
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf(
+			"expected status %d, got %d",
+			http.StatusNotFound,
+			recorder.Code,
 		)
 	}
 }
