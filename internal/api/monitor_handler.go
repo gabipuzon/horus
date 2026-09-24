@@ -54,7 +54,6 @@ func (h *MonitorHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	m, err := monitor.New(
-		"temporary-id",
 		request.Name,
 		request.URL,
 		time.Duration(request.Interval)*time.Second,

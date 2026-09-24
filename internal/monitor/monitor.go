@@ -3,6 +3,8 @@ package monitor
 import (
 	"errors"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type Monitor struct {
@@ -18,17 +20,12 @@ type Monitor struct {
 }
 
 func New(
-	id string,
 	name string,
 	url string,
 	interval time.Duration,
 	timeout time.Duration,
 	expectedStatus int,
 ) (*Monitor, error) {
-	if id == "" {
-		return nil, errors.New("monitor id is required")
-	}
-
 	if name == "" {
 		return nil, errors.New("monitor name is required")
 	}
@@ -52,7 +49,7 @@ func New(
 	now := time.Now()
 
 	return &Monitor{
-		ID:             id,
+		ID:             uuid.NewString(),
 		Name:           name,
 		URL:            url,
 		Interval:       interval,

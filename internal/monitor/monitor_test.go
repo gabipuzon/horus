@@ -7,7 +7,6 @@ import (
 
 func TestNewMonitor(t *testing.T) {
 	m, err := New(
-		"monitor-1",
 		"My Website",
 		"https://example.com",
 		5*time.Minute,
@@ -34,7 +33,6 @@ func TestNewMonitor(t *testing.T) {
 
 func TestNewMonitorRejectsInvalidInterval(t *testing.T) {
 	_, err := New(
-		"monitor-1",
 		"My Website",
 		"https://example.com",
 		0,

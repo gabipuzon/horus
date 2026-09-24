@@ -18,7 +18,6 @@ func TestCheckerTimeout(t *testing.T) {
 	defer server.Close()
 
 	m, err := New(
-		"monitor-1",
 		"Slow Server",
 		server.URL,
 		time.Minute,
@@ -56,7 +55,6 @@ func TestChecker(t *testing.T) {
 	defer server.Close()
 
 	m, err := New(
-		"monitor-1",
 		"Test Server",
 		server.URL,
 		time.Minute,
@@ -102,7 +100,6 @@ func TestCheckerHTTPFailure(t *testing.T) {
 	defer server.Close()
 
 	m, err := New(
-		"monitor-1",
 		"Broken Server",
 		server.URL,
 		time.Minute,
