@@ -109,3 +109,49 @@ func (r *Repository) List(
 
 	return monitors, nil
 }
+
+func (r *Repository) GetByID(
+	ctx context.Context,
+	id string,
+) (*Monitor, error) {
+	var m Monitor
+	var intervalSeconds int
+	var timeoutSeconds int
+
+	err := r.db.QueryRow(
+		ctx,
+		`
+		SELECT
+			id,
+			name,
+			url,
+			interval_seconds,
+			timeout_seconds,
+			expected_status,
+			enabled,
+			created_at,
+			updated_at
+		FROM monitors
+		WHERE id = $1
+		`,
+		id,
+	).Scan(
+		&m.ID,
+		&m.Name,
+		&m.URL,
+		&intervalSeconds,
+		&timeoutSeconds,
+		&m.ExpectedStatus,
+		&m.Enabled,
+		&m.CreatedAt,
+		&m.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	m.Interval = time.Duration(intervalSeconds) * time.Second
+	m.Timeout = time.Duration(timeoutSeconds) * time.Second
+
+	return &m, nil
+}
