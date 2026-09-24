@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
 
 	"github.com/gabipuzon/horus/internal/api"
+	"github.com/gabipuzon/horus/internal/database"
+	"github.com/gabipuzon/horus/internal/monitor"
 )
 
 type HealthResponse struct {
@@ -26,12 +29,28 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	mux := http.NewServeMux()
+	ctx := context.Background()
 
-	monitorHandler := api.NewMonitorHandler()
+	db, err := database.NewPool(ctx, database.Config{
+		Host:     "localhost",
+		Port:     "5432",
+		User:     "horus",
+		Password: "horus",
+		Name:     "horus",
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	monitorRepository := monitor.NewRepository(db)
+	monitorHandler := api.NewMonitorHandler(monitorRepository)
+
+	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /health", healthHandler)
 	mux.HandleFunc("POST /monitors", monitorHandler.Create)
+	mux.HandleFunc("GET /monitors", monitorHandler.List)
 
 	server := &http.Server{
 		Addr:    ":8080",
