@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -8,7 +9,13 @@ import (
 	"github.com/gabipuzon/horus/internal/monitor"
 )
 
+type MonitorRepository interface {
+	Create(ctx context.Context, m *monitor.Monitor) error
+	List(ctx context.Context) ([]*monitor.Monitor, error)
+}
+
 type MonitorHandler struct {
+	repository MonitorRepository
 }
 
 type createMonitorRequest struct {
@@ -29,8 +36,10 @@ type monitorResponse struct {
 	Enabled        bool   `json:"enabled"`
 }
 
-func NewMonitorHandler() *MonitorHandler {
-	return &MonitorHandler{}
+func NewMonitorHandler(repository MonitorRepository) *MonitorHandler {
+	return &MonitorHandler{
+		repository: repository,
+	}
 }
 
 func newMonitorResponse(m *monitor.Monitor) monitorResponse {
@@ -65,10 +74,36 @@ func (h *MonitorHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := h.repository.Create(r.Context(), m); err != nil {
+		http.Error(w, "failed to create monitor", http.StatusInternalServerError)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 
 	response := newMonitorResponse(m)
+
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		return
+	}
+}
+
+func (h *MonitorHandler) List(w http.ResponseWriter, r *http.Request) {
+	monitors, err := h.repository.List(r.Context())
+	if err != nil {
+		http.Error(w, "failed to list monitors", http.StatusInternalServerError)
+		return
+	}
+
+	response := make([]monitorResponse, 0, len(monitors))
+
+	for _, m := range monitors {
+		response = append(response, newMonitorResponse(m))
+	}
+
+	w.Header().Set("Content-Type", "application/json")
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		http.Error(w, "failed to encode response", http.StatusInternalServerError)
