@@ -51,6 +51,7 @@ func main() {
 	mux.HandleFunc("GET /health", healthHandler)
 	mux.HandleFunc("POST /monitors", monitorHandler.Create)
 	mux.HandleFunc("GET /monitors", monitorHandler.List)
+	mux.HandleFunc("GET /monitors/{id}", monitorHandler.GetByID)
 
 	server := &http.Server{
 		Addr:    ":8080",
