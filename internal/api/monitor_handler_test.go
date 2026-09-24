@@ -1,15 +1,32 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/gabipuzon/horus/internal/monitor"
 )
 
+type fakeMonitorRepository struct {
+	created *monitor.Monitor
+}
+
+func (f *fakeMonitorRepository) Create(
+	ctx context.Context,
+	m *monitor.Monitor,
+) error {
+	f.created = m
+	return nil
+}
+
 func TestCreateMonitor(t *testing.T) {
-	handler := NewMonitorHandler()
+	repository := &fakeMonitorRepository{}
+	handler := NewMonitorHandler(repository)
 
 	body := `{
 		"name": "Example",
@@ -37,6 +54,10 @@ func TestCreateMonitor(t *testing.T) {
 			http.StatusCreated,
 			recorder.Code,
 		)
+	}
+
+	if repository.created == nil {
+		t.Fatal("expected monitor to be created")
 	}
 
 	var response monitorResponse
@@ -91,7 +112,8 @@ func TestCreateMonitor(t *testing.T) {
 }
 
 func TestCreateMonitorInvalidRequest(t *testing.T) {
-	handler := NewMonitorHandler()
+	repository := &fakeMonitorRepository{}
+	handler := NewMonitorHandler(repository)
 
 	body := `{
 		"name": "",
@@ -118,6 +140,74 @@ func TestCreateMonitorInvalidRequest(t *testing.T) {
 			"expected status %d, got %d",
 			http.StatusBadRequest,
 			recorder.Code,
+		)
+	}
+}
+
+func (f *fakeMonitorRepository) List(
+	ctx context.Context,
+) ([]*monitor.Monitor, error) {
+	if f.created == nil {
+		return []*monitor.Monitor{}, nil
+	}
+
+	return []*monitor.Monitor{f.created}, nil
+}
+
+func TestListMonitors(t *testing.T) {
+	repository := &fakeMonitorRepository{}
+
+	createdMonitor, err := monitor.New(
+		"Example",
+		"https://example.com",
+		60*time.Second,
+		5*time.Second,
+		200,
+	)
+	if err != nil {
+		t.Fatalf("failed to create monitor: %v", err)
+	}
+
+	repository.created = createdMonitor
+
+	handler := NewMonitorHandler(repository)
+
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/monitors",
+		nil,
+	)
+
+	recorder := httptest.NewRecorder()
+
+	handler.List(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf(
+			"expected status %d, got %d",
+			http.StatusOK,
+			recorder.Code,
+		)
+	}
+
+	var response []monitorResponse
+
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(response) != 1 {
+		t.Fatalf(
+			"expected 1 monitor, got %d",
+			len(response),
+		)
+	}
+
+	if response[0].Name != "Example" {
+		t.Fatalf(
+			"expected name %q, got %q",
+			"Example",
+			response[0].Name,
 		)
 	}
 }
