@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -48,4 +49,63 @@ func (r *Repository) Create(
 	)
 
 	return err
+}
+
+func (r *Repository) List(
+	ctx context.Context,
+) ([]*Monitor, error) {
+	rows, err := r.db.Query(
+		ctx,
+		`
+		SELECT
+			id,
+			name,
+			url,
+			interval_seconds,
+			timeout_seconds,
+			expected_status,
+			enabled,
+			created_at,
+			updated_at
+		FROM monitors
+		ORDER BY created_at DESC
+		`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var monitors []*Monitor
+
+	for rows.Next() {
+		var m Monitor
+		var intervalSeconds int
+		var timeoutSeconds int
+
+		if err := rows.Scan(
+			&m.ID,
+			&m.Name,
+			&m.URL,
+			&intervalSeconds,
+			&timeoutSeconds,
+			&m.ExpectedStatus,
+			&m.Enabled,
+			&m.CreatedAt,
+			&m.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+
+		m.Interval = time.Duration(intervalSeconds) * time.Second
+		m.Timeout = time.Duration(timeoutSeconds) * time.Second
+
+		monitors = append(monitors, &m)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return monitors, nil
 }
