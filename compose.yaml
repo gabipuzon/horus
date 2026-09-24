@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: horus-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: horus
+      POSTGRES_PASSWORD: horus
+      POSTGRES_DB: horus
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
