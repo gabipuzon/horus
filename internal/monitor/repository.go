@@ -32,9 +32,9 @@ func (r *Repository) Create(
 			timeout_seconds,
 			expected_status,
 			enabled,
-			next_check_at,
 			created_at,
-			updated_at
+			updated_at,
+			next_check_at
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		`,
@@ -44,10 +44,10 @@ func (r *Repository) Create(
 		int64(m.Interval.Seconds()),
 		int64(m.Timeout.Seconds()),
 		m.ExpectedStatus,
-		m.NextCheckAt,
 		m.Enabled,
 		m.CreatedAt,
 		m.UpdatedAt,
+		m.NextCheckAt,
 	)
 
 	return err
@@ -67,9 +67,9 @@ func (r *Repository) List(
 			timeout_seconds,
 			expected_status,
 			enabled,
-			next_check_at,
 			created_at,
-			updated_at
+			updated_at,
+			next_check_at
 		FROM monitors
 		ORDER BY created_at DESC
 		`,
@@ -94,9 +94,9 @@ func (r *Repository) List(
 			&timeoutSeconds,
 			&m.ExpectedStatus,
 			&m.Enabled,
-			&m.NextCheckAt,
 			&m.CreatedAt,
 			&m.UpdatedAt,
+			&m.NextCheckAt,
 		); err != nil {
 			return nil, err
 		}
@@ -133,9 +133,9 @@ func (r *Repository) GetByID(
 			timeout_seconds,
 			expected_status,
 			enabled,
-			next_check_at,
 			created_at,
-			updated_at
+			updated_at,
+			next_check_at
 		FROM monitors
 		WHERE id = $1
 		`,
@@ -148,9 +148,9 @@ func (r *Repository) GetByID(
 		&timeoutSeconds,
 		&m.ExpectedStatus,
 		&m.Enabled,
-		&m.NextCheckAt,
 		&m.CreatedAt,
 		&m.UpdatedAt,
+		&m.NextCheckAt,
 	)
 	if err != nil {
 		return nil, err
