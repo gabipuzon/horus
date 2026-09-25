@@ -155,3 +155,19 @@ func (r *Repository) GetByID(
 
 	return &m, nil
 }
+
+func (r *Repository) Delete(
+	ctx context.Context,
+	id string,
+) error {
+	_, err := r.db.Exec(
+		ctx,
+		`
+		DELETE FROM monitors
+		WHERE id = $1
+		`,
+		id,
+	)
+
+	return err
+}
