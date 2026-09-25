@@ -84,3 +84,57 @@ func TestSchedulerSchedule(t *testing.T) {
 		)
 	}
 }
+
+func (f *fakeMonitorSchedulerRepository) SetNextCheckAt(
+	ctx context.Context,
+	id string,
+	nextCheckAt time.Time,
+) error {
+	for _, m := range f.monitors {
+		if m.ID == id {
+			m.NextCheckAt = nextCheckAt
+			return nil
+		}
+	}
+
+	return nil
+}
+
+func TestSchedulerAdvancesNextCheckAt(t *testing.T) {
+	now := time.Now()
+
+	monitor, err := New(
+		"Example",
+		"https://example.com",
+		60*time.Second,
+		5*time.Second,
+		200,
+	)
+	if err != nil {
+		t.Fatalf("failed to create monitor: %v", err)
+	}
+
+	monitor.NextCheckAt = now.Add(-10 * time.Second)
+
+	repository := &fakeMonitorSchedulerRepository{
+		monitors: []*Monitor{monitor},
+	}
+
+	scheduler := NewScheduler(repository)
+
+	_, err = scheduler.schedule(context.Background())
+	if err != nil {
+		t.Fatalf("schedule failed: %v", err)
+	}
+
+	expected := now.Add(50 * time.Second)
+
+	if monitor.NextCheckAt.Before(expected.Add(-time.Second)) ||
+		monitor.NextCheckAt.After(expected.Add(time.Second)) {
+		t.Fatalf(
+			"expected next check around %s, got %s",
+			expected,
+			monitor.NextCheckAt,
+		)
+	}
+}
