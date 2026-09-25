@@ -5,6 +5,10 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/gabipuzon/horus/internal/api"
 	"github.com/gabipuzon/horus/internal/database"
@@ -29,7 +33,12 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	ctx := context.Background()
+	ctx, stop := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM,
+	)
+	defer stop()
 
 	db, err := database.NewPool(ctx, database.Config{
 		Host:     "localhost",
@@ -60,6 +69,7 @@ func main() {
 	)
 
 	workerPool := monitor.NewCheckWorkerPool(
+		ctx,
 		4,
 		checkService,
 	)
@@ -70,7 +80,8 @@ func main() {
 	)
 
 	go func() {
-		if err := scheduler.Run(ctx); err != nil {
+		if err := scheduler.Run(ctx); err != nil &&
+			ctx.Err() == nil {
 			log.Printf("scheduler stopped: %v", err)
 		}
 	}()
@@ -92,9 +103,29 @@ func main() {
 		Addr:    ":8080",
 		Handler: mux,
 	}
-	log.Println("horus server listening on :8080")
 
-	if err := server.ListenAndServe(); err != nil {
-		log.Fatal(err)
+	go func() {
+		log.Println("horus server listening on :8080")
+
+		if err := server.ListenAndServe(); err != nil &&
+			err != http.ErrServerClosed {
+			log.Fatal(err)
+		}
+	}()
+
+	<-ctx.Done()
+
+	log.Println("shutting down horus")
+
+	workerPool.Shutdown()
+
+	shutdownCtx, cancel := context.WithTimeout(
+		context.Background(),
+		5*time.Second,
+	)
+	defer cancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Printf("server shutdown failed: %v", err)
 	}
 }
