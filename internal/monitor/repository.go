@@ -171,3 +171,22 @@ func (r *Repository) Delete(
 
 	return err
 }
+
+func (r *Repository) SetEnabled(
+	ctx context.Context,
+	id string,
+	enabled bool,
+) error {
+	_, err := r.db.Exec(
+		ctx,
+		`
+		UPDATE monitors
+		SET enabled = $1, updated_at = NOW()
+		WHERE id = $2
+		`,
+		enabled,
+		id,
+	)
+
+	return err
+}
