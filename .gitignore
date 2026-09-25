@@ -1,0 +1,41 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+
+# Test binaries, executables, profiling, and coverage output
+*.test
+*.out
+*.prof
+coverage.txt
+coverage.html
+
+# Object files and CGO generated files
+*.o
+*.a
+*.cgo1.go
+*.cgo2.c
+_cgo_defun.c
+_cgo_gotypes.go
+_cgo_export.*
+_testmain.go
+
+# Go workspace files
+go.work
+go.work.sum
+
+# Environment variables
+.env
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# IDE and Editor directories
+.idea/
+.vscode/
+*.swp
+*.swo
