@@ -15,6 +15,7 @@ type Monitor struct {
 	Timeout        time.Duration
 	ExpectedStatus int
 	Enabled        bool
+	NextCheckAt    time.Time
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }
@@ -56,6 +57,7 @@ func New(
 		Timeout:        timeout,
 		ExpectedStatus: expectedStatus,
 		Enabled:        true,
+		NextCheckAt:    now,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}, nil
