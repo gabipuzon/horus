@@ -46,6 +46,9 @@ func main() {
 	monitorRepository := monitor.NewRepository(db)
 	monitorHandler := api.NewMonitorHandler(monitorRepository)
 
+	checkRepository := monitor.NewCheckRepository(db)
+	checkHandler := api.NewCheckHandler(checkRepository)
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /health", healthHandler)
@@ -56,6 +59,7 @@ func main() {
 	mux.HandleFunc("PATCH /monitors/{id}/enable", monitorHandler.Enable)
 	mux.HandleFunc("PATCH /monitors/{id}/disable", monitorHandler.Disable)
 
+	mux.HandleFunc("GET /monitors/{id}/checks", checkHandler.ListByMonitor)
 	server := &http.Server{
 		Addr:    ":8080",
 		Handler: mux,
