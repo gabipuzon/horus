@@ -75,3 +75,61 @@ func (r *CheckRepository) Create(
 
 	return err
 }
+
+func (r *CheckRepository) ListByMonitor(
+	ctx context.Context,
+	monitorID string,
+) ([]Check, error) {
+	rows, err := r.db.Query(
+		ctx,
+		`
+		SELECT
+			id,
+			monitor_id,
+			status_code,
+			latency_ms,
+			success,
+			failure_type,
+			error,
+			checked_at
+		FROM checks
+		WHERE monitor_id = $1
+		ORDER BY checked_at DESC
+		`,
+		monitorID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var checks []Check
+
+	for rows.Next() {
+		var check Check
+		var latencyMs int64
+
+		if err := rows.Scan(
+			&check.ID,
+			&check.MonitorID,
+			&check.StatusCode,
+			&latencyMs,
+			&check.Success,
+			&check.FailureType,
+			&check.Error,
+			&check.CheckedAt,
+		); err != nil {
+			return nil, err
+		}
+
+		check.Latency = time.Duration(latencyMs) * time.Millisecond
+
+		checks = append(checks, check)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return checks, nil
+}
