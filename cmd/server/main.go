@@ -52,6 +52,29 @@ func main() {
 		checkRepository,
 	)
 
+	checker := monitor.NewChecker(http.DefaultClient)
+
+	checkService := monitor.NewCheckService(
+		checker,
+		checkRepository,
+	)
+
+	workerPool := monitor.NewCheckWorkerPool(
+		4,
+		checkService,
+	)
+
+	scheduler := monitor.NewScheduler(
+		monitorRepository,
+		workerPool,
+	)
+
+	go func() {
+		if err := scheduler.Run(ctx); err != nil {
+			log.Printf("scheduler stopped: %v", err)
+		}
+	}()
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /health", healthHandler)
