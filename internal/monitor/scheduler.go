@@ -11,6 +11,11 @@ type Scheduler struct {
 
 type MonitorSchedulerRepository interface {
 	List(ctx context.Context) ([]*Monitor, error)
+	SetNextCheckAt(
+		ctx context.Context,
+		id string,
+		nextCheckAt time.Time,
+	) error
 }
 
 func NewScheduler(repository MonitorSchedulerRepository) *Scheduler {
@@ -51,6 +56,16 @@ func (s *Scheduler) schedule(ctx context.Context) ([]*Monitor, error) {
 		}
 
 		if !now.Before(m.NextCheckAt) {
+			nextCheckAt := m.NextCheckAt.Add(m.Interval)
+
+			if err := s.repository.SetNextCheckAt(
+				ctx,
+				m.ID,
+				nextCheckAt,
+			); err != nil {
+				return nil, err
+			}
+
 			due = append(due, m)
 		}
 	}
