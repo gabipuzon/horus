@@ -13,6 +13,7 @@ type MonitorRepository interface {
 	Create(ctx context.Context, m *monitor.Monitor) error
 	List(ctx context.Context) ([]*monitor.Monitor, error)
 	GetByID(ctx context.Context, id string) (*monitor.Monitor, error)
+	Delete(ctx context.Context, id string) error
 }
 
 type MonitorHandler struct {
@@ -127,4 +128,15 @@ func (h *MonitorHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to encode response", http.StatusInternalServerError)
 		return
 	}
+}
+
+func (h *MonitorHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	if err := h.repository.Delete(r.Context(), id); err != nil {
+		http.Error(w, "failed to delete monitor", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
