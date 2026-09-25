@@ -2,14 +2,22 @@ package monitor
 
 import "context"
 
+type CheckResultRepository interface {
+	Create(
+		ctx context.Context,
+		monitorID string,
+		result CheckResult,
+	) error
+}
+
 type CheckService struct {
 	checker    *Checker
-	repository *CheckRepository
+	repository CheckResultRepository
 }
 
 func NewCheckService(
 	checker *Checker,
-	repository *CheckRepository,
+	repository CheckResultRepository,
 ) *CheckService {
 	return &CheckService{
 		checker:    checker,
