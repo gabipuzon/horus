@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gabipuzon/horus/internal/monitor"
@@ -13,6 +14,8 @@ type CheckRepository interface {
 	ListByMonitor(
 		ctx context.Context,
 		monitorID string,
+		limit int,
+		offset int,
 	) ([]monitor.Check, error)
 }
 
@@ -56,9 +59,44 @@ func (h *CheckHandler) ListByMonitor(
 ) {
 	monitorID := r.PathValue("id")
 
+	limit := 50
+	offset := 0
+
+	if value := r.URL.Query().Get("limit"); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil {
+			limit = parsed
+		}
+	}
+
+	if value := r.URL.Query().Get("offset"); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil {
+			offset = parsed
+		}
+	}
+
+	if limit < 1 || limit > 100 {
+		http.Error(
+			w,
+			"limit must be between 1 and 100",
+			http.StatusBadRequest,
+		)
+		return
+	}
+
+	if offset < 0 {
+		http.Error(
+			w,
+			"offset must not be negative",
+			http.StatusBadRequest,
+		)
+		return
+	}
+
 	checks, err := h.repository.ListByMonitor(
 		r.Context(),
 		monitorID,
+		limit,
+		offset,
 	)
 	if err != nil {
 		http.Error(
