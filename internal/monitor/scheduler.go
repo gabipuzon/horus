@@ -6,7 +6,8 @@ import (
 )
 
 type Scheduler struct {
-	repository MonitorSchedulerRepository
+	repository   MonitorSchedulerRepository
+	checkService *CheckService
 }
 
 type MonitorSchedulerRepository interface {
@@ -18,11 +19,16 @@ type MonitorSchedulerRepository interface {
 	) error
 }
 
-func NewScheduler(repository MonitorSchedulerRepository) *Scheduler {
+func NewScheduler(
+	repository MonitorSchedulerRepository,
+	checkService *CheckService,
+) *Scheduler {
 	return &Scheduler{
-		repository: repository,
+		repository:   repository,
+		checkService: checkService,
 	}
 }
+
 func (s *Scheduler) Run(ctx context.Context) error {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
@@ -67,6 +73,10 @@ func (s *Scheduler) schedule(ctx context.Context) ([]*Monitor, error) {
 			}
 
 			due = append(due, m)
+
+			if _, err := s.checkService.Check(ctx, m); err != nil {
+				return nil, err
+			}
 		}
 	}
 
