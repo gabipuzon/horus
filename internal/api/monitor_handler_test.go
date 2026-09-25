@@ -314,3 +314,89 @@ func TestGetMonitorNotFound(t *testing.T) {
 		)
 	}
 }
+
+func (f *fakeMonitorRepository) Delete(
+	ctx context.Context,
+	id string,
+) error {
+	if f.created == nil {
+		return errors.New("monitor not found")
+	}
+
+	if f.created.ID != id {
+		return errors.New("monitor not found")
+	}
+
+	f.created = nil
+
+	return nil
+}
+
+func TestDeleteMonitor(t *testing.T) {
+	repository := &fakeMonitorRepository{}
+
+	createdMonitor, err := monitor.New(
+		"Example",
+		"https://example.com",
+		60*time.Second,
+		5*time.Second,
+		200,
+	)
+	if err != nil {
+		t.Fatalf("failed to create monitor: %v", err)
+	}
+
+	repository.created = createdMonitor
+
+	handler := NewMonitorHandler(repository)
+
+	request := httptest.NewRequest(
+		http.MethodDelete,
+		"/monitors/"+createdMonitor.ID,
+		nil,
+	)
+
+	request.SetPathValue("id", createdMonitor.ID)
+
+	recorder := httptest.NewRecorder()
+
+	handler.Delete(recorder, request)
+
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf(
+			"expected status %d, got %d",
+			http.StatusNoContent,
+			recorder.Code,
+		)
+	}
+
+	if repository.created != nil {
+		t.Fatal("expected monitor to be deleted")
+	}
+}
+
+func TestDeleteMonitorNotFound(t *testing.T) {
+	repository := &fakeMonitorRepository{}
+
+	handler := NewMonitorHandler(repository)
+
+	request := httptest.NewRequest(
+		http.MethodDelete,
+		"/monitors/missing",
+		nil,
+	)
+
+	request.SetPathValue("id", "missing")
+
+	recorder := httptest.NewRecorder()
+
+	handler.Delete(recorder, request)
+
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf(
+			"expected status %d, got %d",
+			http.StatusInternalServerError,
+			recorder.Code,
+		)
+	}
+}
