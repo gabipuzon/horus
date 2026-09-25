@@ -122,6 +122,7 @@ func TestSchedulerSchedule(t *testing.T) {
 	)
 
 	workerPool := NewCheckWorkerPool(
+		context.Background(),
 		1,
 		checkService,
 	)
@@ -206,6 +207,7 @@ func TestSchedulerAdvancesNextCheckAt(t *testing.T) {
 	)
 
 	workerPool := NewCheckWorkerPool(
+		context.Background(),
 		1,
 		checkService,
 	)
