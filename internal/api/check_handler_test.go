@@ -18,8 +18,20 @@ type fakeCheckRepository struct {
 func (f *fakeCheckRepository) ListByMonitor(
 	ctx context.Context,
 	monitorID string,
+	limit int,
+	offset int,
 ) ([]monitor.Check, error) {
-	return f.checks, nil
+	if offset >= len(f.checks) {
+		return []monitor.Check{}, nil
+	}
+
+	end := offset + limit
+
+	if end > len(f.checks) {
+		end = len(f.checks)
+	}
+
+	return f.checks[offset:end], nil
 }
 
 func TestListChecks(t *testing.T) {
