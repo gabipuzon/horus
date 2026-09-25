@@ -400,3 +400,106 @@ func TestDeleteMonitorNotFound(t *testing.T) {
 		)
 	}
 }
+
+func (f *fakeMonitorRepository) SetEnabled(
+	ctx context.Context,
+	id string,
+	enabled bool,
+) error {
+	if f.created == nil {
+		return errors.New("monitor not found")
+	}
+
+	if f.created.ID != id {
+		return errors.New("monitor not found")
+	}
+
+	f.created.Enabled = enabled
+
+	return nil
+}
+
+func TestEnableMonitor(t *testing.T) {
+	repository := &fakeMonitorRepository{}
+
+	createdMonitor, err := monitor.New(
+		"Example",
+		"https://example.com",
+		60*time.Second,
+		5*time.Second,
+		200,
+	)
+	if err != nil {
+		t.Fatalf("failed to create monitor: %v", err)
+	}
+
+	createdMonitor.Enabled = false
+	repository.created = createdMonitor
+
+	handler := NewMonitorHandler(repository)
+
+	request := httptest.NewRequest(
+		http.MethodPatch,
+		"/monitors/"+createdMonitor.ID+"/enable",
+		nil,
+	)
+	request.SetPathValue("id", createdMonitor.ID)
+
+	recorder := httptest.NewRecorder()
+
+	handler.Enable(recorder, request)
+
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf(
+			"expected status %d, got %d",
+			http.StatusNoContent,
+			recorder.Code,
+		)
+	}
+
+	if !repository.created.Enabled {
+		t.Fatal("expected monitor to be enabled")
+	}
+}
+
+func TestDisableMonitor(t *testing.T) {
+	repository := &fakeMonitorRepository{}
+
+	createdMonitor, err := monitor.New(
+		"Example",
+		"https://example.com",
+		60*time.Second,
+		5*time.Second,
+		200,
+	)
+	if err != nil {
+		t.Fatalf("failed to create monitor: %v", err)
+	}
+
+	repository.created = createdMonitor
+
+	handler := NewMonitorHandler(repository)
+
+	request := httptest.NewRequest(
+		http.MethodPatch,
+		"/monitors/"+createdMonitor.ID+"/disable",
+		nil,
+	)
+	request.SetPathValue("id", createdMonitor.ID)
+
+	recorder := httptest.NewRecorder()
+
+	handler.Disable(recorder, request)
+
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf(
+			"expected status %d, got %d",
+			http.StatusNoContent,
+			recorder.Code,
+		)
+	}
+
+	if repository.created.Enabled {
+		t.Fatal("expected monitor to be disabled")
+	}
+}
