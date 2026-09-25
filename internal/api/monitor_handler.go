@@ -14,6 +14,7 @@ type MonitorRepository interface {
 	List(ctx context.Context) ([]*monitor.Monitor, error)
 	GetByID(ctx context.Context, id string) (*monitor.Monitor, error)
 	Delete(ctx context.Context, id string) error
+	SetEnabled(ctx context.Context, id string, enabled bool) error
 }
 
 type MonitorHandler struct {
@@ -135,6 +136,28 @@ func (h *MonitorHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.repository.Delete(r.Context(), id); err != nil {
 		http.Error(w, "failed to delete monitor", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *MonitorHandler) Enable(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	if err := h.repository.SetEnabled(r.Context(), id, true); err != nil {
+		http.Error(w, "failed to enable monitor", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *MonitorHandler) Disable(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	if err := h.repository.SetEnabled(r.Context(), id, false); err != nil {
+		http.Error(w, "failed to disable monitor", http.StatusInternalServerError)
 		return
 	}
 
