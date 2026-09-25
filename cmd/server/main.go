@@ -47,7 +47,10 @@ func main() {
 	monitorHandler := api.NewMonitorHandler(monitorRepository)
 
 	checkRepository := monitor.NewCheckRepository(db)
-	checkHandler := api.NewCheckHandler(checkRepository)
+	checkHandler := api.NewCheckHandler(
+		checkRepository,
+		checkRepository,
+	)
 
 	mux := http.NewServeMux()
 
