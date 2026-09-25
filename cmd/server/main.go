@@ -53,6 +53,8 @@ func main() {
 	mux.HandleFunc("GET /monitors", monitorHandler.List)
 	mux.HandleFunc("GET /monitors/{id}", monitorHandler.GetByID)
 	mux.HandleFunc("DELETE /monitors/{id}", monitorHandler.Delete)
+	mux.HandleFunc("PATCH /monitors/{id}/enable", monitorHandler.Enable)
+	mux.HandleFunc("PATCH /monitors/{id}/disable", monitorHandler.Disable)
 
 	server := &http.Server{
 		Addr:    ":8080",
