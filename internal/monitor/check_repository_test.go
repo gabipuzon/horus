@@ -247,3 +247,136 @@ func TestCheckRepositoryListByMonitor(t *testing.T) {
 		)
 	}
 }
+
+func TestCheckRepositoryGetSummary(t *testing.T) {
+	ctx := context.Background()
+
+	db, err := pgxpool.New(
+		ctx,
+		"postgres://horus:horus@localhost:5432/horus",
+	)
+	if err != nil {
+		t.Fatalf("failed to create database pool: %v", err)
+	}
+	defer db.Close()
+
+	monitorID := "00000000-0000-0000-0000-000000000003"
+
+	_, err = db.Exec(
+		ctx,
+		`
+		INSERT INTO monitors (
+			id,
+			name,
+			url,
+			interval_seconds,
+			timeout_seconds,
+			expected_status,
+			enabled,
+			created_at,
+			updated_at
+		)
+		VALUES (
+			$1,
+			$2,
+			$3,
+			$4,
+			$5,
+			$6,
+			$7,
+			NOW(),
+			NOW()
+		)
+		ON CONFLICT (id) DO NOTHING
+		`,
+		monitorID,
+		"Summary Test",
+		"https://example.com",
+		60,
+		5,
+		200,
+		true,
+	)
+	if err != nil {
+		t.Fatalf("failed to create test monitor: %v", err)
+	}
+
+	_, err = db.Exec(
+		ctx,
+		`DELETE FROM checks WHERE monitor_id = $1`,
+		monitorID,
+	)
+	if err != nil {
+		t.Fatalf("failed to clean test checks: %v", err)
+	}
+
+	repository := NewCheckRepository(db)
+
+	err = repository.Create(
+		ctx,
+		monitorID,
+		CheckResult{
+			StatusCode:  200,
+			Latency:     100 * time.Millisecond,
+			Success:     true,
+			FailureType: FailureNone,
+		},
+	)
+	if err != nil {
+		t.Fatalf("failed to create successful check: %v", err)
+	}
+
+	err = repository.Create(
+		ctx,
+		monitorID,
+		CheckResult{
+			StatusCode:  500,
+			Latency:     300 * time.Millisecond,
+			Success:     false,
+			FailureType: FailureHTTP,
+		},
+	)
+	if err != nil {
+		t.Fatalf("failed to create failed check: %v", err)
+	}
+
+	summary, err := repository.GetSummary(ctx, monitorID)
+	if err != nil {
+		t.Fatalf("failed to get summary: %v", err)
+	}
+
+	if summary.TotalChecks != 2 {
+		t.Fatalf(
+			"expected 2 total checks, got %d",
+			summary.TotalChecks,
+		)
+	}
+
+	if summary.SuccessfulChecks != 1 {
+		t.Fatalf(
+			"expected 1 successful check, got %d",
+			summary.SuccessfulChecks,
+		)
+	}
+
+	if summary.FailedChecks != 1 {
+		t.Fatalf(
+			"expected 1 failed check, got %d",
+			summary.FailedChecks,
+		)
+	}
+
+	if summary.AverageLatency != 200*time.Millisecond {
+		t.Fatalf(
+			"expected average latency of 200ms, got %s",
+			summary.AverageLatency,
+		)
+	}
+
+	if summary.LatestStatus != 500 {
+		t.Fatalf(
+			"expected latest status 500, got %d",
+			summary.LatestStatus,
+		)
+	}
+}
