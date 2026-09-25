@@ -63,11 +63,12 @@ func main() {
 	mux.HandleFunc("PATCH /monitors/{id}/disable", monitorHandler.Disable)
 
 	mux.HandleFunc("GET /monitors/{id}/checks", checkHandler.ListByMonitor)
+	mux.HandleFunc("GET /monitors/{id}/summary", checkHandler.GetSummary)
+
 	server := &http.Server{
 		Addr:    ":8080",
 		Handler: mux,
 	}
-
 	log.Println("horus server listening on :8080")
 
 	if err := server.ListenAndServe(); err != nil {
