@@ -5,11 +5,6 @@ import (
 	"time"
 )
 
-type Scheduler struct {
-	repository   MonitorSchedulerRepository
-	checkService *CheckService
-}
-
 type MonitorSchedulerRepository interface {
 	List(ctx context.Context) ([]*Monitor, error)
 	SetNextCheckAt(
@@ -19,13 +14,18 @@ type MonitorSchedulerRepository interface {
 	) error
 }
 
+type Scheduler struct {
+	repository MonitorSchedulerRepository
+	workerPool *CheckWorkerPool
+}
+
 func NewScheduler(
 	repository MonitorSchedulerRepository,
-	checkService *CheckService,
+	workerPool *CheckWorkerPool,
 ) *Scheduler {
 	return &Scheduler{
-		repository:   repository,
-		checkService: checkService,
+		repository: repository,
+		workerPool: workerPool,
 	}
 }
 
@@ -74,9 +74,7 @@ func (s *Scheduler) schedule(ctx context.Context) ([]*Monitor, error) {
 
 			due = append(due, m)
 
-			if _, err := s.checkService.Check(ctx, m); err != nil {
-				return nil, err
-			}
+			s.workerPool.Submit(m)
 		}
 	}
 
