@@ -34,7 +34,7 @@ func (f *fakeMonitorSchedulerRepository) SetNextCheckAt(
 }
 
 type fakeSchedulerCheckRepository struct {
-	called    bool
+	called    chan struct{}
 	monitorID string
 	result    CheckResult
 }
@@ -44,9 +44,10 @@ func (f *fakeSchedulerCheckRepository) Create(
 	monitorID string,
 	result CheckResult,
 ) error {
-	f.called = true
 	f.monitorID = monitorID
 	f.result = result
+
+	close(f.called)
 
 	return nil
 }
@@ -109,7 +110,9 @@ func TestSchedulerSchedule(t *testing.T) {
 		},
 	}
 
-	checkRepository := &fakeSchedulerCheckRepository{}
+	checkRepository := &fakeSchedulerCheckRepository{
+		called: make(chan struct{}),
+	}
 
 	checker := NewChecker(http.DefaultClient)
 
@@ -118,9 +121,14 @@ func TestSchedulerSchedule(t *testing.T) {
 		checkRepository,
 	)
 
+	workerPool := NewCheckWorkerPool(
+		1,
+		checkService,
+	)
+
 	scheduler := NewScheduler(
 		repository,
-		checkService,
+		workerPool,
 	)
 
 	due, err := scheduler.schedule(context.Background())
@@ -140,7 +148,9 @@ func TestSchedulerSchedule(t *testing.T) {
 		)
 	}
 
-	if !checkRepository.called {
+	select {
+	case <-checkRepository.called:
+	case <-time.After(time.Second):
 		t.Fatal("expected check service to run check")
 	}
 
@@ -184,7 +194,9 @@ func TestSchedulerAdvancesNextCheckAt(t *testing.T) {
 		monitors: []*Monitor{monitor},
 	}
 
-	checkRepository := &fakeSchedulerCheckRepository{}
+	checkRepository := &fakeSchedulerCheckRepository{
+		called: make(chan struct{}),
+	}
 
 	checker := NewChecker(http.DefaultClient)
 
@@ -193,9 +205,14 @@ func TestSchedulerAdvancesNextCheckAt(t *testing.T) {
 		checkRepository,
 	)
 
+	workerPool := NewCheckWorkerPool(
+		1,
+		checkService,
+	)
+
 	scheduler := NewScheduler(
 		repository,
-		checkService,
+		workerPool,
 	)
 
 	_, err = scheduler.schedule(context.Background())
