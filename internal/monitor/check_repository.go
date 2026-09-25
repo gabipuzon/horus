@@ -79,24 +79,30 @@ func (r *CheckRepository) Create(
 func (r *CheckRepository) ListByMonitor(
 	ctx context.Context,
 	monitorID string,
+	limit int,
+	offset int,
 ) ([]Check, error) {
 	rows, err := r.db.Query(
 		ctx,
 		`
-		SELECT
-			id,
-			monitor_id,
-			status_code,
-			latency_ms,
-			success,
-			failure_type,
-			error,
-			checked_at
-		FROM checks
-		WHERE monitor_id = $1
-		ORDER BY checked_at DESC
-		`,
+        SELECT
+            id,
+            monitor_id,
+            status_code,
+            latency_ms,
+            success,
+            failure_type,
+            error,
+            checked_at
+        FROM checks
+        WHERE monitor_id = $1
+        ORDER BY checked_at DESC
+        LIMIT $2
+        OFFSET $3
+        `,
 		monitorID,
+		limit,
+		offset,
 	)
 	if err != nil {
 		return nil, err
