@@ -12,7 +12,8 @@ import (
 )
 
 type fakeCheckRepository struct {
-	checks []monitor.Check
+	checks  []monitor.Check
+	summary monitor.CheckSummary
 }
 
 func (f *fakeCheckRepository) ListByMonitor(
@@ -60,7 +61,7 @@ func TestListChecks(t *testing.T) {
 		},
 	}
 
-	handler := NewCheckHandler(repository)
+	handler := NewCheckHandler(repository, repository)
 
 	request := httptest.NewRequest(
 		http.MethodGet,
@@ -148,7 +149,7 @@ func TestListChecksWithLimit(t *testing.T) {
 		},
 	}
 
-	handler := NewCheckHandler(repository)
+	handler := NewCheckHandler(repository, repository)
 
 	request := httptest.NewRequest(
 		http.MethodGet,
@@ -190,7 +191,7 @@ func TestListChecksWithOffset(t *testing.T) {
 		},
 	}
 
-	handler := NewCheckHandler(repository)
+	handler := NewCheckHandler(repository, repository)
 
 	request := httptest.NewRequest(
 		http.MethodGet,
@@ -233,7 +234,7 @@ func TestListChecksWithOffset(t *testing.T) {
 func TestListChecksWithInvalidLimit(t *testing.T) {
 	repository := &fakeCheckRepository{}
 
-	handler := NewCheckHandler(repository)
+	handler := NewCheckHandler(repository, repository)
 
 	request := httptest.NewRequest(
 		http.MethodGet,
@@ -259,7 +260,7 @@ func TestListChecksWithInvalidLimit(t *testing.T) {
 func TestListChecksWithNegativeOffset(t *testing.T) {
 	repository := &fakeCheckRepository{}
 
-	handler := NewCheckHandler(repository)
+	handler := NewCheckHandler(repository, repository)
 
 	request := httptest.NewRequest(
 		http.MethodGet,
@@ -278,6 +279,88 @@ func TestListChecksWithNegativeOffset(t *testing.T) {
 			"expected status %d, got %d",
 			http.StatusBadRequest,
 			recorder.Code,
+		)
+	}
+}
+
+func (f *fakeCheckRepository) GetSummary(
+	ctx context.Context,
+	monitorID string,
+) (monitor.CheckSummary, error) {
+	return f.summary, nil
+}
+
+func TestGetSummary(t *testing.T) {
+	repository := &fakeCheckRepository{
+		summary: monitor.CheckSummary{
+			TotalChecks:      100,
+			SuccessfulChecks: 95,
+			FailedChecks:     5,
+			AverageLatency:   150 * time.Millisecond,
+			LatestStatus:     500,
+		},
+	}
+
+	handler := NewCheckHandler(repository, repository)
+
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/monitors/monitor-1/summary",
+		nil,
+	)
+
+	request.SetPathValue("id", "monitor-1")
+
+	recorder := httptest.NewRecorder()
+
+	handler.GetSummary(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf(
+			"expected status %d, got %d",
+			http.StatusOK,
+			recorder.Code,
+		)
+	}
+
+	var response checkSummaryResponse
+
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if response.TotalChecks != 100 {
+		t.Fatalf(
+			"expected 100 total checks, got %d",
+			response.TotalChecks,
+		)
+	}
+
+	if response.SuccessfulChecks != 95 {
+		t.Fatalf(
+			"expected 95 successful checks, got %d",
+			response.SuccessfulChecks,
+		)
+	}
+
+	if response.FailedChecks != 5 {
+		t.Fatalf(
+			"expected 5 failed checks, got %d",
+			response.FailedChecks,
+		)
+	}
+
+	if response.AverageLatencyMs != 150 {
+		t.Fatalf(
+			"expected average latency 150ms, got %d",
+			response.AverageLatencyMs,
+		)
+	}
+
+	if response.LatestStatus != 500 {
+		t.Fatalf(
+			"expected latest status 500, got %d",
+			response.LatestStatus,
 		)
 	}
 }
