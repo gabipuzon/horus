@@ -19,6 +19,14 @@ type Check struct {
 	CheckedAt   time.Time
 }
 
+type CheckSummary struct {
+	TotalChecks      int
+	SuccessfulChecks int
+	FailedChecks     int
+	AverageLatency   time.Duration
+	LatestStatus     int
+}
+
 type CheckRepository struct {
 	db *pgxpool.Pool
 }
@@ -138,4 +146,49 @@ func (r *CheckRepository) ListByMonitor(
 	}
 
 	return checks, nil
+}
+
+func (r *CheckRepository) GetSummary(
+	ctx context.Context,
+	monitorID string,
+) (CheckSummary, error) {
+	var summary CheckSummary
+	var averageLatencyMs float64
+
+	err := r.db.QueryRow(
+		ctx,
+		`
+		SELECT
+			COUNT(*),
+			COUNT(*) FILTER (WHERE success = TRUE),
+			COUNT(*) FILTER (WHERE success = FALSE),
+			COALESCE(AVG(latency_ms), 0),
+			COALESCE(
+				(
+					SELECT status_code
+					FROM checks
+					WHERE monitor_id = $1
+					ORDER BY checked_at DESC
+					LIMIT 1
+				),
+				0
+			)
+		FROM checks
+		WHERE monitor_id = $1
+		`,
+		monitorID,
+	).Scan(
+		&summary.TotalChecks,
+		&summary.SuccessfulChecks,
+		&summary.FailedChecks,
+		&averageLatencyMs,
+		&summary.LatestStatus,
+	)
+	if err != nil {
+		return CheckSummary{}, err
+	}
+
+	summary.AverageLatency = time.Duration(averageLatencyMs) * time.Millisecond
+
+	return summary, nil
 }
