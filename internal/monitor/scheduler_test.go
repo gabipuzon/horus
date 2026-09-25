@@ -2,6 +2,8 @@ package monitor
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -16,12 +18,52 @@ func (f *fakeMonitorSchedulerRepository) List(
 	return f.monitors, nil
 }
 
+func (f *fakeMonitorSchedulerRepository) SetNextCheckAt(
+	ctx context.Context,
+	id string,
+	nextCheckAt time.Time,
+) error {
+	for _, m := range f.monitors {
+		if m.ID == id {
+			m.NextCheckAt = nextCheckAt
+			return nil
+		}
+	}
+
+	return nil
+}
+
+type fakeSchedulerCheckRepository struct {
+	called    bool
+	monitorID string
+	result    CheckResult
+}
+
+func (f *fakeSchedulerCheckRepository) Create(
+	ctx context.Context,
+	monitorID string,
+	result CheckResult,
+) error {
+	f.called = true
+	f.monitorID = monitorID
+	f.result = result
+
+	return nil
+}
+
 func TestSchedulerSchedule(t *testing.T) {
 	now := time.Now()
 
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}),
+	)
+	defer server.Close()
+
 	dueMonitor, err := New(
 		"Due",
-		"https://example.com",
+		server.URL,
 		60*time.Second,
 		5*time.Second,
 		200,
@@ -31,9 +73,10 @@ func TestSchedulerSchedule(t *testing.T) {
 	}
 
 	dueMonitor.NextCheckAt = now.Add(-2 * time.Minute)
+
 	notDueMonitor, err := New(
 		"Not Due",
-		"https://example.com",
+		server.URL,
 		60*time.Second,
 		5*time.Second,
 		200,
@@ -43,9 +86,10 @@ func TestSchedulerSchedule(t *testing.T) {
 	}
 
 	notDueMonitor.NextCheckAt = now.Add(10 * time.Second)
+
 	disabledMonitor, err := New(
 		"Disabled",
-		"https://example.com",
+		server.URL,
 		60*time.Second,
 		5*time.Second,
 		200,
@@ -65,7 +109,19 @@ func TestSchedulerSchedule(t *testing.T) {
 		},
 	}
 
-	scheduler := NewScheduler(repository)
+	checkRepository := &fakeSchedulerCheckRepository{}
+
+	checker := NewChecker(http.DefaultClient)
+
+	checkService := NewCheckService(
+		checker,
+		checkRepository,
+	)
+
+	scheduler := NewScheduler(
+		repository,
+		checkService,
+	)
 
 	due, err := scheduler.schedule(context.Background())
 	if err != nil {
@@ -83,29 +139,37 @@ func TestSchedulerSchedule(t *testing.T) {
 			due[0].ID,
 		)
 	}
-}
 
-func (f *fakeMonitorSchedulerRepository) SetNextCheckAt(
-	ctx context.Context,
-	id string,
-	nextCheckAt time.Time,
-) error {
-	for _, m := range f.monitors {
-		if m.ID == id {
-			m.NextCheckAt = nextCheckAt
-			return nil
-		}
+	if !checkRepository.called {
+		t.Fatal("expected check service to run check")
 	}
 
-	return nil
+	if checkRepository.monitorID != dueMonitor.ID {
+		t.Fatalf(
+			"expected check for monitor %q, got %q",
+			dueMonitor.ID,
+			checkRepository.monitorID,
+		)
+	}
+
+	if !checkRepository.result.Success {
+		t.Fatal("expected check to succeed")
+	}
 }
 
 func TestSchedulerAdvancesNextCheckAt(t *testing.T) {
 	now := time.Now()
 
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}),
+	)
+	defer server.Close()
+
 	monitor, err := New(
 		"Example",
-		"https://example.com",
+		server.URL,
 		60*time.Second,
 		5*time.Second,
 		200,
@@ -120,7 +184,19 @@ func TestSchedulerAdvancesNextCheckAt(t *testing.T) {
 		monitors: []*Monitor{monitor},
 	}
 
-	scheduler := NewScheduler(repository)
+	checkRepository := &fakeSchedulerCheckRepository{}
+
+	checker := NewChecker(http.DefaultClient)
+
+	checkService := NewCheckService(
+		checker,
+		checkRepository,
+	)
+
+	scheduler := NewScheduler(
+		repository,
+		checkService,
+	)
 
 	_, err = scheduler.schedule(context.Background())
 	if err != nil {
