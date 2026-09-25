@@ -30,8 +30,7 @@ func TestSchedulerSchedule(t *testing.T) {
 		t.Fatalf("failed to create due monitor: %v", err)
 	}
 
-	dueMonitor.UpdatedAt = now.Add(-2 * time.Minute)
-
+	dueMonitor.NextCheckAt = now.Add(-2 * time.Minute)
 	notDueMonitor, err := New(
 		"Not Due",
 		"https://example.com",
@@ -43,8 +42,7 @@ func TestSchedulerSchedule(t *testing.T) {
 		t.Fatalf("failed to create not-due monitor: %v", err)
 	}
 
-	notDueMonitor.UpdatedAt = now.Add(-10 * time.Second)
-
+	notDueMonitor.NextCheckAt = now.Add(10 * time.Second)
 	disabledMonitor, err := New(
 		"Disabled",
 		"https://example.com",
@@ -56,7 +54,7 @@ func TestSchedulerSchedule(t *testing.T) {
 		t.Fatalf("failed to create disabled monitor: %v", err)
 	}
 
-	disabledMonitor.UpdatedAt = now.Add(-2 * time.Minute)
+	disabledMonitor.NextCheckAt = now.Add(-2 * time.Minute)
 	disabledMonitor.Enabled = false
 
 	repository := &fakeMonitorSchedulerRepository{
