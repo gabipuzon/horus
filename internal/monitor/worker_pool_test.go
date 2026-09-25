@@ -59,6 +59,7 @@ func TestCheckWorkerPoolSubmitsMonitor(t *testing.T) {
 	)
 
 	pool := NewCheckWorkerPool(
+		context.Background(),
 		1,
 		checkService,
 	)
