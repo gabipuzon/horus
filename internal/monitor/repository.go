@@ -196,3 +196,22 @@ func (r *Repository) SetEnabled(
 
 	return err
 }
+
+func (r *Repository) SetNextCheckAt(
+	ctx context.Context,
+	id string,
+	nextCheckAt time.Time,
+) error {
+	_, err := r.db.Exec(
+		ctx,
+		`
+		UPDATE monitors
+		SET next_check_at = $1, updated_at = NOW()
+		WHERE id = $2
+		`,
+		nextCheckAt,
+		id,
+	)
+
+	return err
+}
