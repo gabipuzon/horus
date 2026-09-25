@@ -50,7 +50,7 @@ func (s *Scheduler) schedule(ctx context.Context) ([]*Monitor, error) {
 			continue
 		}
 
-		if now.Sub(m.UpdatedAt) >= m.Interval {
+		if !now.Before(m.NextCheckAt) {
 			due = append(due, m)
 		}
 	}
