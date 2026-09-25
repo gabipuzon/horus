@@ -202,7 +202,7 @@ func TestCheckRepositoryListByMonitor(t *testing.T) {
 		t.Fatalf("failed to create second check: %v", err)
 	}
 
-	checks, err := repository.ListByMonitor(ctx, monitorID)
+	checks, err := repository.ListByMonitor(ctx, monitorID, 50, 0)
 	if err != nil {
 		t.Fatalf("failed to list checks: %v", err)
 	}
