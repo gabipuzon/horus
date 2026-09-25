@@ -19,8 +19,16 @@ type CheckRepository interface {
 	) ([]monitor.Check, error)
 }
 
+type CheckSummaryRepository interface {
+	GetSummary(
+		ctx context.Context,
+		monitorID string,
+	) (monitor.CheckSummary, error)
+}
+
 type CheckHandler struct {
-	repository CheckRepository
+	repository        CheckRepository
+	summaryRepository CheckSummaryRepository
 }
 
 type checkResponse struct {
@@ -34,9 +42,21 @@ type checkResponse struct {
 	CheckedAt   string `json:"checked_at"`
 }
 
-func NewCheckHandler(repository CheckRepository) *CheckHandler {
+type checkSummaryResponse struct {
+	TotalChecks      int   `json:"total_checks"`
+	SuccessfulChecks int   `json:"successful_checks"`
+	FailedChecks     int   `json:"failed_checks"`
+	AverageLatencyMs int64 `json:"average_latency_ms"`
+	LatestStatus     int   `json:"latest_status"`
+}
+
+func NewCheckHandler(
+	repository CheckRepository,
+	summaryRepository CheckSummaryRepository,
+) *CheckHandler {
 	return &CheckHandler{
-		repository: repository,
+		repository:        repository,
+		summaryRepository: summaryRepository,
 	}
 }
 
@@ -111,6 +131,45 @@ func (h *CheckHandler) ListByMonitor(
 
 	for _, check := range checks {
 		response = append(response, newCheckResponse(check))
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(
+			w,
+			"failed to encode response",
+			http.StatusInternalServerError,
+		)
+		return
+	}
+}
+
+func (h *CheckHandler) GetSummary(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	monitorID := r.PathValue("id")
+
+	summary, err := h.summaryRepository.GetSummary(
+		r.Context(),
+		monitorID,
+	)
+	if err != nil {
+		http.Error(
+			w,
+			"failed to get check summary",
+			http.StatusInternalServerError,
+		)
+		return
+	}
+
+	response := checkSummaryResponse{
+		TotalChecks:      summary.TotalChecks,
+		SuccessfulChecks: summary.SuccessfulChecks,
+		FailedChecks:     summary.FailedChecks,
+		AverageLatencyMs: summary.AverageLatency.Milliseconds(),
+		LatestStatus:     summary.LatestStatus,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
