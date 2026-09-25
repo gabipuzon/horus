@@ -138,3 +138,146 @@ func TestListChecks(t *testing.T) {
 		)
 	}
 }
+
+func TestListChecksWithLimit(t *testing.T) {
+	repository := &fakeCheckRepository{
+		checks: []monitor.Check{
+			{ID: "check-1", MonitorID: "monitor-1"},
+			{ID: "check-2", MonitorID: "monitor-1"},
+			{ID: "check-3", MonitorID: "monitor-1"},
+		},
+	}
+
+	handler := NewCheckHandler(repository)
+
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/monitors/monitor-1/checks?limit=2",
+		nil,
+	)
+
+	request.SetPathValue("id", "monitor-1")
+
+	recorder := httptest.NewRecorder()
+
+	handler.ListByMonitor(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf(
+			"expected status %d, got %d",
+			http.StatusOK,
+			recorder.Code,
+		)
+	}
+
+	var response []checkResponse
+
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(response) != 2 {
+		t.Fatalf("expected 2 checks, got %d", len(response))
+	}
+}
+
+func TestListChecksWithOffset(t *testing.T) {
+	repository := &fakeCheckRepository{
+		checks: []monitor.Check{
+			{ID: "check-1", MonitorID: "monitor-1"},
+			{ID: "check-2", MonitorID: "monitor-1"},
+			{ID: "check-3", MonitorID: "monitor-1"},
+		},
+	}
+
+	handler := NewCheckHandler(repository)
+
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/monitors/monitor-1/checks?offset=1",
+		nil,
+	)
+
+	request.SetPathValue("id", "monitor-1")
+
+	recorder := httptest.NewRecorder()
+
+	handler.ListByMonitor(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf(
+			"expected status %d, got %d",
+			http.StatusOK,
+			recorder.Code,
+		)
+	}
+
+	var response []checkResponse
+
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(response) != 2 {
+		t.Fatalf("expected 2 checks, got %d", len(response))
+	}
+
+	if response[0].ID != "check-2" {
+		t.Fatalf(
+			"expected first check to be check-2, got %s",
+			response[0].ID,
+		)
+	}
+}
+
+func TestListChecksWithInvalidLimit(t *testing.T) {
+	repository := &fakeCheckRepository{}
+
+	handler := NewCheckHandler(repository)
+
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/monitors/monitor-1/checks?limit=101",
+		nil,
+	)
+
+	request.SetPathValue("id", "monitor-1")
+
+	recorder := httptest.NewRecorder()
+
+	handler.ListByMonitor(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf(
+			"expected status %d, got %d",
+			http.StatusBadRequest,
+			recorder.Code,
+		)
+	}
+}
+
+func TestListChecksWithNegativeOffset(t *testing.T) {
+	repository := &fakeCheckRepository{}
+
+	handler := NewCheckHandler(repository)
+
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/monitors/monitor-1/checks?offset=-1",
+		nil,
+	)
+
+	request.SetPathValue("id", "monitor-1")
+
+	recorder := httptest.NewRecorder()
+
+	handler.ListByMonitor(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf(
+			"expected status %d, got %d",
+			http.StatusBadRequest,
+			recorder.Code,
+		)
+	}
+}
