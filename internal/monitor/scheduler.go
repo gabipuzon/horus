@@ -3,6 +3,8 @@ package monitor
 import (
 	"context"
 	"time"
+
+	"github.com/gabipuzon/horus/internal/queue"
 )
 
 type MonitorSchedulerRepository interface {
@@ -14,18 +16,25 @@ type MonitorSchedulerRepository interface {
 	) error
 }
 
+type CheckQueue interface {
+	EnqueueCheck(
+		ctx context.Context,
+		job queue.CheckJob,
+	) error
+}
+
 type Scheduler struct {
 	repository MonitorSchedulerRepository
-	workerPool *CheckWorkerPool
+	queue      CheckQueue
 }
 
 func NewScheduler(
 	repository MonitorSchedulerRepository,
-	workerPool *CheckWorkerPool,
+	queue CheckQueue,
 ) *Scheduler {
 	return &Scheduler{
 		repository: repository,
-		workerPool: workerPool,
+		queue:      queue,
 	}
 }
 
@@ -72,9 +81,16 @@ func (s *Scheduler) schedule(ctx context.Context) ([]*Monitor, error) {
 				return nil, err
 			}
 
-			due = append(due, m)
+			if err := s.queue.EnqueueCheck(
+				ctx,
+				queue.CheckJob{
+					MonitorID: m.ID,
+				},
+			); err != nil {
+				return nil, err
+			}
 
-			s.workerPool.Submit(m)
+			due = append(due, m)
 		}
 	}
 
