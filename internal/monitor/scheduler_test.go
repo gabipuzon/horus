@@ -2,10 +2,10 @@ package monitor
 
 import (
 	"context"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/gabipuzon/horus/internal/queue"
 )
 
 type fakeMonitorSchedulerRepository struct {
@@ -33,38 +33,24 @@ func (f *fakeMonitorSchedulerRepository) SetNextCheckAt(
 	return nil
 }
 
-type fakeSchedulerCheckRepository struct {
-	called    chan struct{}
-	monitorID string
-	result    CheckResult
+type fakeCheckQueue struct {
+	jobs []queue.CheckJob
 }
 
-func (f *fakeSchedulerCheckRepository) Create(
+func (f *fakeCheckQueue) EnqueueCheck(
 	ctx context.Context,
-	monitorID string,
-	result CheckResult,
+	job queue.CheckJob,
 ) error {
-	f.monitorID = monitorID
-	f.result = result
-
-	close(f.called)
-
+	f.jobs = append(f.jobs, job)
 	return nil
 }
 
 func TestSchedulerSchedule(t *testing.T) {
 	now := time.Now()
 
-	server := httptest.NewServer(
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-		}),
-	)
-	defer server.Close()
-
 	dueMonitor, err := New(
 		"Due",
-		server.URL,
+		"https://example.com",
 		60*time.Second,
 		5*time.Second,
 		200,
@@ -77,7 +63,7 @@ func TestSchedulerSchedule(t *testing.T) {
 
 	notDueMonitor, err := New(
 		"Not Due",
-		server.URL,
+		"https://example.com",
 		60*time.Second,
 		5*time.Second,
 		200,
@@ -90,7 +76,7 @@ func TestSchedulerSchedule(t *testing.T) {
 
 	disabledMonitor, err := New(
 		"Disabled",
-		server.URL,
+		"https://example.com",
 		60*time.Second,
 		5*time.Second,
 		200,
@@ -110,26 +96,11 @@ func TestSchedulerSchedule(t *testing.T) {
 		},
 	}
 
-	checkRepository := &fakeSchedulerCheckRepository{
-		called: make(chan struct{}),
-	}
-
-	checker := NewChecker(http.DefaultClient)
-
-	checkService := NewCheckService(
-		checker,
-		checkRepository,
-	)
-
-	workerPool := NewCheckWorkerPool(
-		context.Background(),
-		1,
-		checkService,
-	)
+	checkQueue := &fakeCheckQueue{}
 
 	scheduler := NewScheduler(
 		repository,
-		workerPool,
+		checkQueue,
 	)
 
 	due, err := scheduler.schedule(context.Background())
@@ -149,38 +120,28 @@ func TestSchedulerSchedule(t *testing.T) {
 		)
 	}
 
-	select {
-	case <-checkRepository.called:
-	case <-time.After(time.Second):
-		t.Fatal("expected check service to run check")
-	}
-
-	if checkRepository.monitorID != dueMonitor.ID {
+	if len(checkQueue.jobs) != 1 {
 		t.Fatalf(
-			"expected check for monitor %q, got %q",
-			dueMonitor.ID,
-			checkRepository.monitorID,
+			"expected 1 queued job, got %d",
+			len(checkQueue.jobs),
 		)
 	}
 
-	if !checkRepository.result.Success {
-		t.Fatal("expected check to succeed")
+	if checkQueue.jobs[0].MonitorID != dueMonitor.ID {
+		t.Fatalf(
+			"expected queued monitor %q, got %q",
+			dueMonitor.ID,
+			checkQueue.jobs[0].MonitorID,
+		)
 	}
 }
 
 func TestSchedulerAdvancesNextCheckAt(t *testing.T) {
 	now := time.Now()
 
-	server := httptest.NewServer(
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-		}),
-	)
-	defer server.Close()
-
 	monitor, err := New(
 		"Example",
-		server.URL,
+		"https://example.com",
 		60*time.Second,
 		5*time.Second,
 		200,
@@ -195,26 +156,11 @@ func TestSchedulerAdvancesNextCheckAt(t *testing.T) {
 		monitors: []*Monitor{monitor},
 	}
 
-	checkRepository := &fakeSchedulerCheckRepository{
-		called: make(chan struct{}),
-	}
-
-	checker := NewChecker(http.DefaultClient)
-
-	checkService := NewCheckService(
-		checker,
-		checkRepository,
-	)
-
-	workerPool := NewCheckWorkerPool(
-		context.Background(),
-		1,
-		checkService,
-	)
+	checkQueue := &fakeCheckQueue{}
 
 	scheduler := NewScheduler(
 		repository,
-		workerPool,
+		checkQueue,
 	)
 
 	_, err = scheduler.schedule(context.Background())
@@ -230,6 +176,21 @@ func TestSchedulerAdvancesNextCheckAt(t *testing.T) {
 			"expected next check around %s, got %s",
 			expected,
 			monitor.NextCheckAt,
+		)
+	}
+
+	if len(checkQueue.jobs) != 1 {
+		t.Fatalf(
+			"expected 1 queued job, got %d",
+			len(checkQueue.jobs),
+		)
+	}
+
+	if checkQueue.jobs[0].MonitorID != monitor.ID {
+		t.Fatalf(
+			"expected queued monitor %q, got %q",
+			monitor.ID,
+			checkQueue.jobs[0].MonitorID,
 		)
 	}
 }
