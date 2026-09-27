@@ -2,10 +2,13 @@ package queue
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/redis/go-redis/v9"
 )
+
+const CheckQueue = "horus:checks"
 
 type Config struct {
 	Host string
@@ -30,4 +33,44 @@ func (r *Redis) Ping(ctx context.Context) error {
 
 func (r *Redis) Close() error {
 	return r.client.Close()
+}
+
+func (r *Redis) EnqueueCheck(
+	ctx context.Context,
+	job CheckJob,
+) error {
+	data, err := json.Marshal(job)
+	if err != nil {
+		return err
+	}
+
+	return r.client.LPush(
+		ctx,
+		CheckQueue,
+		data,
+	).Err()
+}
+
+func (r *Redis) DequeueCheck(
+	ctx context.Context,
+) (CheckJob, error) {
+	data, err := r.client.BRPop(
+		ctx,
+		0,
+		CheckQueue,
+	).Result()
+	if err != nil {
+		return CheckJob{}, err
+	}
+
+	var job CheckJob
+
+	if err := json.Unmarshal(
+		[]byte(data[1]),
+		&job,
+	); err != nil {
+		return CheckJob{}, err
+	}
+
+	return job, nil
 }
