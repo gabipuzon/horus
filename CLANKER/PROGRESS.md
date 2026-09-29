@@ -1,251 +1,65 @@
-# PROGRESS.md
+# Project Progress
 
-## STATE
+## Current state
 
-- Status: active development
-- Source of truth: confirmed repository implementation + tests
-- Update policy: update only after verified changes
-- Writable context file: yes
-- Other AI context files: read-only
+Horus has an end-to-end core monitoring flow: manage monitors over HTTP, schedule due checks, enqueue jobs in Redis, execute checks with a bounded worker pool, persist check results in PostgreSQL, and query check history and summaries through the API.
 
-## COMPLETED
+## Implemented
 
-### Foundation
+### Monitor API and persistence
 
-- [x] Initialize Go project
-- [x] Create HTTP server
-- [x] Create Monitor domain
-- [x] Add monitor validation
-- [x] Generate monitor UUIDs
-- [x] Add configurable HTTP checker
-- [x] Add request timeout handling
-- [x] Add failure classification
-- [x] Add `POST /monitors`
-- [x] Define API response model
-- [x] Add monitor creation API tests
+- Monitor model with UUID IDs and validation for required name/URL, positive interval/timeout, and HTTP status range.
+- PostgreSQL monitor repository and migrations for monitor state, including `next_check_at`.
+- Create, list, retrieve, delete, enable, and disable monitor endpoints.
 
-### PostgreSQL
+### Checks and history
 
-- [x] Add PostgreSQL Docker Compose environment
-- [x] Add PostgreSQL connection module
-- [x] Add monitors migration
-- [x] Add monitor repository
-- [x] Persist monitors through API
-- [x] Load monitors from PostgreSQL
-- [x] Add `GET /monitors`
-- [x] Add `GET /monitors/{id}`
-- [x] Add `DELETE /monitors/{id}`
-- [x] Add monitor enable/disable persistence
-- [x] Add monitor enable endpoint
-- [x] Add monitor disable endpoint
-- [x] Add API tests for monitor CRUD/control operations
+- HTTP GET checker with monitor timeout, latency measurement, expected-status comparison, and `http`/`network`/`timeout` failure classification.
+- PostgreSQL check repository, foreign-key cascade, and monitor/time history index.
+- Check history endpoint with `limit`/`offset` pagination (default limit 50, maximum 100).
+- Summary endpoint with total/success/failure counts, average latency, and latest HTTP status.
 
-## CURRENT DOMAIN
+### Scheduling and workers
 
-### Monitor API
+- One-second scheduler selects enabled monitors whose `next_check_at` is due, advances their schedule, and queues jobs in Redis list `horus:checks`.
+- Redis client provides ping, enqueue (`LPUSH`), and blocking dequeue (`BRPOP`).
+- Application starts three workers in the same process; workers load monitors, run checks, and persist results.
+- Process handles interrupt/SIGTERM, cancels and joins workers, and gracefully shuts down the HTTP server.
+
+### Runtime/API
+
+- `GET /health` returns a basic `{"status":"ok"}` response.
+- PostgreSQL 17 and Redis 8 are available through `compose.yaml`.
+
+## Routes
 
 ```text
+GET    /health
 POST   /monitors
 GET    /monitors
 GET    /monitors/{id}
 DELETE /monitors/{id}
 PATCH  /monitors/{id}/enable
 PATCH  /monitors/{id}/disable
-````
-
-### Monitor Persistence
-
-Current monitor fields:
-
-```text
-id
-name
-url
-interval_seconds
-timeout_seconds
-expected_status
-enabled
-created_at
-updated_at
+GET    /monitors/{id}/checks
+GET    /monitors/{id}/summary
 ```
 
-### Monitor Checker
+## Known gaps and limitations
 
-Current failure classifications:
+- No incident lifecycle, outage/recovery state, or notifications.
+- No user accounts, authentication, authorization, or monitor ownership.
+- No SSRF protections, URL scheme restriction, private-network/metadata blocking, or redirect validation.
+- No retries/backoff, duplicate-job protection, queue recovery/dead-letter handling, or configurable worker count.
+- No readiness endpoint, metrics, structured logging, production configuration, or container image for Horus.
+- PostgreSQL/Redis addresses and credentials are hardcoded in `cmd/server/main.go`; migrations must be applied manually.
+- Monitor enable/disable and delete handlers do not distinguish a missing ID from a successful update/delete.
+- Checker uses `http.DefaultClient`; status mismatch is checked against one exact expected status.
 
-```text
-http
-network
-timeout
-```
+## Verification record
 
-Current checker responsibilities:
+The repository includes unit/API tests and PostgreSQL-backed repository tests. Database tests require a reachable local PostgreSQL service and applied migrations. This documentation update did not run tests or change implementation code; no new test result is claimed.
 
-* HTTP request execution
-* Context timeout
-* Latency measurement
-* Expected status validation
-* Failure classification
+## Next work
 
-## VERIFIED
-
-* `go test ./...` passes after completed implementation steps.
-* PostgreSQL development container is operational.
-* PostgreSQL connection has been verified.
-* Monitor migration has been applied.
-* Monitor persistence has been manually verified.
-* API handlers use repository interfaces for testability.
-* Monitor API behavior has automated tests.
-
-## CURRENT NEXT AREA
-
-### Check History
-
-Implement persistent health-check results.
-
-Planned sequence:
-
-```text
-1. Design checks table
-2. Create checks migration
-3. Create check repository
-4. Persist CheckResult
-5. Add GET /monitors/{id}/checks
-6. Add pagination
-7. Add latency/status history
-```
-
-## CHECK DATA
-
-Expected conceptual fields:
-
-```text
-id
-monitor_id
-checked_at
-status_code
-latency
-success
-failure_type
-error
-```
-
-Exact schema should be designed before implementation.
-
-## FUTURE AREAS
-
-### Monitoring Engine
-
-```text
-scheduler
-→ monitor selection
-→ job creation
-→ worker pool
-→ HTTP checker
-→ CheckResult
-→ persistence
-```
-
-### Incidents
-
-```text
-CheckResult
-→ failure detection
-→ incident creation/update
-→ recovery detection
-→ incident resolution
-```
-
-### Async Infrastructure
-
-* Redis
-* Check queue
-* Workers
-* Retry/backoff
-* Notification queue
-
-### Notifications
-
-* Notification domain
-* Email
-* Webhooks
-* Discord/Slack
-* Outage alerts
-* Recovery alerts
-* Cooldowns
-
-### Authentication
-
-* Users
-* Password hashing
-* Login
-* Authentication middleware
-* Monitor ownership
-* Authorization
-
-### Observability
-
-* Structured logging
-* Request logging
-* Prometheus metrics
-* Worker metrics
-* Database metrics
-* Health/readiness endpoints
-
-### Production
-
-* Configuration management
-* Environment variables
-* Graceful shutdown
-* Rate limiting
-* Request limits
-* SSRF protection
-* Security headers
-* Dockerfile
-* Production deployment
-
-### Portfolio
-
-* Architecture diagram
-* API documentation
-* Setup documentation
-* Architecture decisions
-* Benchmarks
-* Load testing
-* Dashboard/screenshots
-* CV project description
-* GitHub cleanup
-
-## KNOWN CONSTRAINTS
-
-* PostgreSQL is the durable source of truth.
-* Redis is for asynchronous coordination, not primary business state.
-* HTTP handlers must not contain SQL.
-* Repository interfaces should remain small.
-* External monitoring targets are untrusted input.
-* Worker concurrency must be bounded.
-* Context cancellation must propagate through I/O.
-* Do not introduce infrastructure without a concrete requirement.
-
-## GIT
-
-* Use one logical change per commit.
-* Prefer conventional commit prefixes:
-
-  * `feat:`
-  * `fix:`
-  * `test:`
-  * `refactor:`
-  * `chore:`
-  * `docs:`
-* Do not rewrite history unless explicitly requested.
-
-## UPDATE RULE
-
-After each verified implementation step:
-
-1. Mark completed work.
-2. Record relevant verification.
-3. Update current/next area if changed.
-4. Record important known issues.
-5. Do not record speculative completion.
+Choose the next implementation step from product priorities. Security around user-controlled target URLs and configurable runtime settings are important gaps before exposing the service beyond a trusted local environment. Incidents and notifications remain future product capabilities.

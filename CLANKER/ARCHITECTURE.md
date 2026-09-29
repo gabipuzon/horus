@@ -1,369 +1,80 @@
-# ARCHITECTURE.md
+# Architecture
 
-## SYSTEM
+## Current system
 
-- Pattern: modular monolith initially; distributed workers introduced where justified.
-- Language: Go.
-- API: HTTP/JSON.
-- Database: PostgreSQL.
-- Queue/cache: Redis.
-- Deployment: Docker-compatible.
-- Principle: keep synchronous core simple; introduce async processing for workload isolation and scalability.
-
-## TARGET ARCHITECTURE
+Horus is a single Go process with an HTTP API, scheduler, and worker pool. PostgreSQL stores monitor configuration and check history. Redis transports check jobs between the scheduler and workers.
 
 ```text
-                    ┌──────────────┐
-                    │    Client    │
-                    └──────┬───────┘
-                           │ HTTP
-                           ▼
-                    ┌──────────────┐
-                    │  Horus API   │
-                    └──────┬───────┘
-                           │
-             ┌─────────────┴─────────────┐
-             ▼                           ▼
-      ┌─────────────┐             ┌─────────────┐
-      │ PostgreSQL  │             │    Redis    │
-      └─────────────┘             └──────┬──────┘
-                                         │ jobs
-                                         ▼
-                                  ┌─────────────┐
-                                  │   Workers   │
-                                  └──────┬──────┘
-                                         │ HTTP
-                                         ▼
-                                  ┌─────────────┐
-                                  │   Targets   │
-                                  └─────────────┘
-                                         │
-                                         ▼
-                                  CheckResult
-                                         │
-                           ┌─────────────┴─────────────┐
-                           ▼                           ▼
-                     Check History                Incident
-                                                       │
-                                                       ▼
-                                                 Notifications
-````
+HTTP client ──> net/http API ──> PostgreSQL
 
-## PACKAGE STRUCTURE
+PostgreSQL monitors ──> 1s scheduler ──> Redis list `horus:checks`
+                                                │
+                                      3 blocking workers
+                                                │
+                                      HTTP checker / target
+                                                │
+                                      check result ──> PostgreSQL
+```
 
-Expected high-level structure:
+Startup and wiring live in `cmd/server/main.go`. The process expects PostgreSQL on `localhost:5432` and Redis on `localhost:6379`; it checks both at startup. The HTTP server listens on `:8080`. These addresses and credentials are currently hardcoded. `compose.yaml` provides PostgreSQL 17 and Redis 8 for local development.
+
+## Packages
 
 ```text
-horus/
-├── cmd/
-│   └── server/
-├── internal/
-│   ├── api/
-│   ├── database/
-│   ├── monitor/
-│   ├── check/
-│   ├── incident/
-│   ├── notification/
-│   ├── scheduler/
-│   ├── worker/
-│   └── ...
-├── migrations/
-├── compose.yaml
-├── go.mod
-└── README.md
+cmd/server/       process startup, dependency wiring, routes, health handler
+internal/api/     monitor and check HTTP handlers / JSON contracts
+internal/database/ PostgreSQL connection pool
+internal/monitor/ monitor model, repositories, checker, check service, scheduler, workers
+internal/queue/   Redis list client and check job payload
+migrations/       SQL schema migrations
 ```
 
-Package boundaries should reflect domain responsibility rather than arbitrary technical layers.
+There are no separate `check`, `incident`, `notification`, or `worker` packages in the current repository; check and worker functionality lives in `internal/monitor`.
 
-## DOMAIN FLOW
+## Runtime flow
 
-### Monitor Configuration
+### Monitor requests
+
+The API decodes and validates monitor creation through `monitor.New`, then calls the monitor repository. The repository owns SQL access. Listing and retrieval map persisted models to API response structs. Enable/disable update state; delete removes a monitor and the checks migration's foreign key cascades to its check history.
+
+### Scheduling and checks
+
+The scheduler wakes every second, lists monitors, skips disabled or not-yet-due monitors, advances each due monitor's `next_check_at` by one interval, and pushes a `MonitorID` job to Redis. Redis uses the `horus:checks` list (`LPUSH`/blocking `BRPOP`). Three workers are started at process startup. Each worker loads the monitor, runs the checker through `CheckService`, and persists the result.
+
+The checker performs a GET with a timeout derived from the monitor, measures elapsed time, and compares the response status to `expected_status`. Request errors are classified as `network` or `timeout`; mismatched HTTP responses are `http`. The check service persists both successful and failed results. There is no retry, backoff, job acknowledgement/dead-letter strategy, duplicate suppression, or incident processing implemented.
+
+### Shutdown
+
+Interrupt and SIGTERM cancel the root context. Workers are cancelled and joined, then the HTTP server receives a five-second graceful-shutdown deadline. PostgreSQL and Redis clients are closed on process exit.
+
+## Persistence
+
+Migrations are plain SQL files and are not applied automatically by startup. Apply `001_create_monitors.sql`, `002_create_checks.sql`, then `003_add_monitor_next_check_at.sql` in order.
+
+`monitors` stores UUID, name, URL, interval/timeout in seconds, expected status, enabled flag, timestamps, and (after migration 003) `next_check_at`. `checks` stores UUID, monitor foreign key with cascade delete, nullable status code, latency in milliseconds, success, failure type, nullable error, and check timestamp. An index supports per-monitor history ordered by recent check time.
+
+## HTTP API
+
+Routes are registered with Go's `net/http` method/path patterns in `cmd/server/main.go`:
 
 ```text
-API
- ↓
-Monitor validation
- ↓
-Monitor domain
- ↓
-Monitor repository
- ↓
-PostgreSQL
+GET    /health
+POST   /monitors
+GET    /monitors
+GET    /monitors/{id}
+DELETE /monitors/{id}
+PATCH  /monitors/{id}/enable
+PATCH  /monitors/{id}/disable
+GET    /monitors/{id}/checks
+GET    /monitors/{id}/summary
 ```
 
-### Scheduled Check
-
-```text
-Scheduler
- ↓
-Select enabled monitors
- ↓
-Create check job
- ↓
-Redis
- ↓
-Worker
- ↓
-HTTP Checker
- ↓
-CheckResult
- ↓
-Persistence
-```
-
-### Incident Detection
-
-```text
-CheckResult
- ↓
-Incident evaluator
- ├── success
- │     └── recover existing incident
- │
- └── failure
-       └── open/update incident
-```
-
-### Notification
-
-```text
-Incident state change
- ↓
-Notification job
- ↓
-Redis
- ↓
-Notification worker
- ↓
-Provider
-```
-
-## CURRENT TECHNOLOGY
-
-### Go
-
-* Standard library preferred where sufficient.
-* `net/http` for HTTP server.
-* `context.Context` for request/job cancellation.
-* `time.Duration` for internal timing.
-* Explicit dependency injection for external resources.
-
-### PostgreSQL
-
-* Primary durable datastore.
-* Monitor configuration stored here.
-* Check history stored here.
-* Incident history stored here.
-* User/authentication data stored here.
-* Migrations are versioned SQL files.
-
-### pgx
-
-* PostgreSQL driver/client.
-* `pgxpool.Pool` for connection pooling.
-* Repository layer owns SQL access.
-* Domain packages should not directly depend on SQL where avoidable.
-
-### Redis
-
-Reserved for asynchronous coordination:
-
-* Check jobs
-* Notification jobs
-* Retries
-* Queue state where required
-
-Redis should not become the authoritative store for durable business state.
-
-## API ARCHITECTURE
-
-Handlers:
-
-* Decode HTTP input.
-* Validate request-level constraints.
-* Invoke domain/repository operations.
-* Map domain results to API responses.
-* Return appropriate HTTP status codes.
-
-Handlers should not contain:
-
-* Raw SQL.
-* Scheduling logic.
-* HTTP monitoring logic.
-* Incident state machines.
-* Notification delivery logic.
-
-## REPOSITORY ARCHITECTURE
-
-Repositories abstract persistence operations.
-
-Example:
-
-```go
-type MonitorRepository interface {
-    Create(ctx context.Context, m *Monitor) error
-    List(ctx context.Context) ([]*Monitor, error)
-    GetByID(ctx context.Context, id string) (*Monitor, error)
-    Delete(ctx context.Context, id string) error
-    SetEnabled(ctx context.Context, id string, enabled bool) error
-}
-```
-
-Rules:
-
-* Accept `context.Context`.
-* Return explicit errors.
-* Keep SQL inside repository implementations.
-* Do not expose database-specific types unnecessarily.
-* Interfaces belong near the consumer when practical.
-
-## CHECKER ARCHITECTURE
-
-The checker executes one monitor request.
-
-Responsibilities:
-
-* Build HTTP request.
-* Apply timeout.
-* Execute request.
-* Measure latency.
-* Validate expected status.
-* Classify failures.
-* Return `CheckResult`.
-
-Checker does not:
-
-* Persist results.
-* Create incidents.
-* Send notifications.
-* Schedule itself.
-
-## SCHEDULER
-
-Responsibilities:
-
-* Determine which enabled monitors require execution.
-* Respect monitor intervals.
-* Submit check jobs.
-* Prevent duplicate/overlapping work.
-
-Scheduler does not perform HTTP checks directly once worker architecture is introduced.
-
-## WORKERS
-
-Workers:
-
-* Consume jobs.
-* Execute bounded concurrent work.
-* Respect context cancellation.
-* Persist results.
-* Trigger downstream processing.
-* Handle retry policy.
-
-Worker count and concurrency should be configurable.
-
-## INCIDENT MODEL
-
-Incident state should be deterministic from check outcomes.
-
-Minimum conceptual states:
-
-```text
-open
-resolved
-```
-
-Rules:
-
-* One active incident per monitor.
-* Repeated failures update the existing incident.
-* A successful check can resolve an active incident.
-* Recovery should not create a second incident.
-
-## DATABASE PRINCIPLES
-
-* PostgreSQL is source of truth.
-* Use UUID primary keys for externally meaningful entities.
-* Store timestamps as `TIMESTAMPTZ`.
-* Store internal durations using explicit units.
-* API units must be explicit, e.g. seconds.
-* Use indexes based on actual query patterns.
-* Foreign keys enforce relationships.
-* Schema changes require migrations.
-
-## RELIABILITY
-
-Required architectural concerns:
-
-* Request timeouts.
-* Context cancellation.
-* Bounded concurrency.
-* Retry/backoff where appropriate.
-* Graceful shutdown.
-* Database connection pooling.
-* Queue failure handling.
-* Duplicate-job protection.
-* SSRF protection for user-controlled target URLs.
-
-## OBSERVABILITY
-
-Expose:
-
-* Request metrics.
-* Check success/failure metrics.
-* Check latency.
-* Worker/job metrics.
-* Queue metrics.
-* Database metrics.
-* Application health.
-* Readiness state.
-
-Logs should contain enough structured context to trace:
-
-```text
-request → monitor → check → incident → notification
-```
-
-## SECURITY
-
-Required protections:
-
-* Authentication before protected resources.
-* Authorization by resource ownership.
-* Password hashing.
-* Request size limits.
-* Rate limiting where appropriate.
-* SSRF prevention.
-* Safe URL validation.
-* Security-conscious HTTP client configuration.
-* Secrets supplied through configuration/environment, not source code.
-
-## ARCHITECTURAL CONSTRAINTS
-
-* Do not introduce microservices merely for organizational appearance.
-* Do not use Redis as a replacement for PostgreSQL.
-* Do not couple handlers directly to infrastructure.
-* Do not put business state transitions inside SQL-only logic.
-* Do not allow unbounded worker concurrency.
-* Do not allow user-controlled monitoring targets to bypass SSRF protections.
-* Prefer measurable requirements over speculative abstractions.
-
-## EVOLUTION
-
-Architecture may evolve when implementation demonstrates a real need.
-
-Decision order:
-
-```text
-simple implementation
-      ↓
-measure / identify constraint
-      ↓
-introduce abstraction or infrastructure
-      ↓
-test behavior
-      ↓
-document architectural reason
-```
-
-Implementation state and completed work belong exclusively in `PROGRESS.md`.
+Handlers use repository interfaces defined at the API boundary. Check history accepts `limit` (default 50, range 1–100) and `offset` (default 0, nonnegative), and returns rows newest first. The summary reports counts, average latency, and latest HTTP status; no checks yields zero values. Unknown/malformed pagination values that fail integer parsing currently fall back to defaults.
+
+## Boundaries and limitations
+
+- PostgreSQL is the source of truth; Redis is currently a job transport, not a cache or durable business store.
+- The scheduler currently shares one process with API and workers; Redis does not imply independently deployed workers.
+- The worker count is fixed at three and configuration is not environment-driven.
+- The checker uses the default HTTP client and accepts URLs after only nonempty-string validation. Scheme restrictions, private-network/metadata blocking, and redirect validation are not implemented.
+- There is no authentication, authorization, readiness endpoint, metrics, or incident/notification subsystem.
