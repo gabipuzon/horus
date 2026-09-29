@@ -4,10 +4,16 @@ import (
 	"context"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/gabipuzon/horus/internal/check"
 	"github.com/gabipuzon/horus/internal/monitor"
 	"github.com/gabipuzon/horus/internal/queue"
+)
+
+const (
+	initialDequeueBackoff = 250 * time.Millisecond
+	maximumDequeueBackoff = 5 * time.Second
 )
 
 type checkJobConsumer interface {
@@ -54,6 +60,7 @@ func NewPool(
 
 func (p *Pool) worker() {
 	defer p.wg.Done()
+	backoff := dequeueBackoff{}
 
 	for {
 		job, err := p.queue.DequeueCheck(p.ctx)
@@ -63,8 +70,12 @@ func (p *Pool) worker() {
 			}
 
 			log.Printf("worker failed to dequeue check: %v", err)
-			return
+			if !waitForRetry(p.ctx, backoff.next()) {
+				return
+			}
+			continue
 		}
+		backoff.reset()
 
 		m, err := p.repository.GetByID(p.ctx, job.MonitorID)
 		if err != nil {
@@ -91,6 +102,39 @@ func (p *Pool) worker() {
 				err,
 			)
 		}
+	}
+}
+
+type dequeueBackoff struct {
+	current time.Duration
+}
+
+func (b *dequeueBackoff) next() time.Duration {
+	if b.current == 0 {
+		b.current = initialDequeueBackoff
+	}
+	delay := b.current
+	if b.current >= maximumDequeueBackoff/2 {
+		b.current = maximumDequeueBackoff
+	} else {
+		b.current *= 2
+	}
+	return delay
+}
+
+func (b *dequeueBackoff) reset() {
+	b.current = 0
+}
+
+func waitForRetry(ctx context.Context, delay time.Duration) bool {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return ctx.Err() == nil
 	}
 }
 
