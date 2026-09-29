@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/gabipuzon/horus/internal/queue"
 )
 
 type fakeWorkerCheckRepository struct {
@@ -28,7 +30,37 @@ func (f *fakeWorkerCheckRepository) Create(
 	return nil
 }
 
-func TestCheckWorkerPoolSubmitsMonitor(t *testing.T) {
+type fakeWorkerQueue struct {
+	jobs chan queue.CheckJob
+}
+
+func (f *fakeWorkerQueue) DequeueCheck(
+	ctx context.Context,
+) (queue.CheckJob, error) {
+	select {
+	case <-ctx.Done():
+		return queue.CheckJob{}, ctx.Err()
+	case job := <-f.jobs:
+		return job, nil
+	}
+}
+
+type fakeWorkerMonitorRepository struct {
+	monitor *Monitor
+}
+
+func (f *fakeWorkerMonitorRepository) GetByID(
+	ctx context.Context,
+	id string,
+) (*Monitor, error) {
+	if f.monitor.ID != id {
+		return nil, context.DeadlineExceeded
+	}
+
+	return f.monitor, nil
+}
+
+func TestCheckWorkerPoolProcessesQueuedMonitor(t *testing.T) {
 	server := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
@@ -36,7 +68,7 @@ func TestCheckWorkerPoolSubmitsMonitor(t *testing.T) {
 	)
 	defer server.Close()
 
-	monitor, err := New(
+	m, err := New(
 		"Example",
 		server.URL,
 		time.Minute,
@@ -47,36 +79,48 @@ func TestCheckWorkerPoolSubmitsMonitor(t *testing.T) {
 		t.Fatalf("failed to create monitor: %v", err)
 	}
 
-	repository := &fakeWorkerCheckRepository{
+	checkRepository := &fakeWorkerCheckRepository{
 		called: make(chan struct{}, 1),
 	}
 
 	checker := NewChecker(http.DefaultClient)
+	checkService := NewCheckService(checker, checkRepository)
 
-	checkService := NewCheckService(
-		checker,
-		repository,
-	)
+	checkQueue := &fakeWorkerQueue{
+		jobs: make(chan queue.CheckJob, 1),
+	}
+
+	monitorRepository := &fakeWorkerMonitorRepository{
+		monitor: m,
+	}
+
+	checkQueue.jobs <- queue.CheckJob{
+		MonitorID: m.ID,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	pool := NewCheckWorkerPool(
-		context.Background(),
-		1,
+		ctx,
+		3,
+		checkQueue,
+		monitorRepository,
 		checkService,
 	)
-
-	pool.Submit(monitor)
+	defer pool.Shutdown()
 
 	select {
-	case <-repository.called:
-	case <-time.After(time.Second):
+	case <-checkRepository.called:
+	case <-time.After(2 * time.Second):
 		t.Fatal("expected worker to execute check")
 	}
 
-	if repository.monitorID != monitor.ID {
+	if checkRepository.monitorID != m.ID {
 		t.Fatalf(
 			"expected monitor ID %q, got %q",
-			monitor.ID,
-			repository.monitorID,
+			m.ID,
+			checkRepository.monitorID,
 		)
 	}
 }

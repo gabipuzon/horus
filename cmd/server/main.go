@@ -13,6 +13,7 @@ import (
 	"github.com/gabipuzon/horus/internal/api"
 	"github.com/gabipuzon/horus/internal/database"
 	"github.com/gabipuzon/horus/internal/monitor"
+	"github.com/gabipuzon/horus/internal/queue"
 )
 
 type HealthResponse struct {
@@ -27,7 +28,11 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		http.Error(
+			w,
+			"failed to encode response",
+			http.StatusInternalServerError,
+		)
 		return
 	}
 }
@@ -52,6 +57,16 @@ func main() {
 	}
 	defer db.Close()
 
+	redis := queue.NewRedis(queue.Config{
+		Host: "localhost",
+		Port: "6379",
+	})
+
+	if err := redis.Ping(ctx); err != nil {
+		log.Fatal(err)
+	}
+	defer redis.Close()
+
 	monitorRepository := monitor.NewRepository(db)
 	monitorHandler := api.NewMonitorHandler(monitorRepository)
 
@@ -62,7 +77,6 @@ func main() {
 	)
 
 	checker := monitor.NewChecker(http.DefaultClient)
-
 	checkService := monitor.NewCheckService(
 		checker,
 		checkRepository,
@@ -70,13 +84,15 @@ func main() {
 
 	workerPool := monitor.NewCheckWorkerPool(
 		ctx,
-		4,
+		3,
+		redis,
+		monitorRepository,
 		checkService,
 	)
 
 	scheduler := monitor.NewScheduler(
 		monitorRepository,
-		workerPool,
+		redis,
 	)
 
 	go func() {
@@ -96,8 +112,14 @@ func main() {
 	mux.HandleFunc("PATCH /monitors/{id}/enable", monitorHandler.Enable)
 	mux.HandleFunc("PATCH /monitors/{id}/disable", monitorHandler.Disable)
 
-	mux.HandleFunc("GET /monitors/{id}/checks", checkHandler.ListByMonitor)
-	mux.HandleFunc("GET /monitors/{id}/summary", checkHandler.GetSummary)
+	mux.HandleFunc(
+		"GET /monitors/{id}/checks",
+		checkHandler.ListByMonitor,
+	)
+	mux.HandleFunc(
+		"GET /monitors/{id}/summary",
+		checkHandler.GetSummary,
+	)
 
 	server := &http.Server{
 		Addr:    ":8080",
@@ -109,7 +131,8 @@ func main() {
 
 		if err := server.ListenAndServe(); err != nil &&
 			err != http.ErrServerClosed {
-			log.Fatal(err)
+			log.Printf("HTTP server failed: %v", err)
+			stop()
 		}
 	}()
 

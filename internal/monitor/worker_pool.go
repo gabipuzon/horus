@@ -1,29 +1,49 @@
 package monitor
 
-import "context"
+import (
+	"context"
+	"log"
+	"sync"
+
+	"github.com/gabipuzon/horus/internal/queue"
+)
+
+type CheckJobConsumer interface {
+	DequeueCheck(ctx context.Context) (queue.CheckJob, error)
+}
+
+type MonitorLookup interface {
+	GetByID(ctx context.Context, id string) (*Monitor, error)
+}
 
 type CheckWorkerPool struct {
-	jobs         chan *Monitor
+	queue        CheckJobConsumer
+	repository   MonitorLookup
 	checkService *CheckService
 	ctx          context.Context
 	cancel       context.CancelFunc
+	wg           sync.WaitGroup
 }
 
 func NewCheckWorkerPool(
 	ctx context.Context,
 	workerCount int,
+	queue CheckJobConsumer,
+	repository MonitorLookup,
 	checkService *CheckService,
 ) *CheckWorkerPool {
 	workerCtx, cancel := context.WithCancel(ctx)
 
 	pool := &CheckWorkerPool{
-		jobs:         make(chan *Monitor),
+		queue:        queue,
+		repository:   repository,
 		checkService: checkService,
 		ctx:          workerCtx,
 		cancel:       cancel,
 	}
 
 	for i := 0; i < workerCount; i++ {
+		pool.wg.Add(1)
 		go pool.worker()
 	}
 
@@ -31,26 +51,48 @@ func NewCheckWorkerPool(
 }
 
 func (p *CheckWorkerPool) worker() {
+	defer p.wg.Done()
+
 	for {
-		select {
-		case <-p.ctx.Done():
+		job, err := p.queue.DequeueCheck(p.ctx)
+		if err != nil {
+			if p.ctx.Err() != nil {
+				return
+			}
+
+			log.Printf("worker failed to dequeue check: %v", err)
 			return
-
-		case monitor := <-p.jobs:
-			_, _ = p.checkService.Check(p.ctx, monitor)
 		}
-	}
-}
 
-func (p *CheckWorkerPool) Submit(monitor *Monitor) {
-	select {
-	case <-p.ctx.Done():
-		return
+		m, err := p.repository.GetByID(p.ctx, job.MonitorID)
+		if err != nil {
+			if p.ctx.Err() != nil {
+				return
+			}
 
-	case p.jobs <- monitor:
+			log.Printf(
+				"worker failed to load monitor %s: %v",
+				job.MonitorID,
+				err,
+			)
+			continue
+		}
+
+		if _, err := p.checkService.Check(p.ctx, m); err != nil {
+			if p.ctx.Err() != nil {
+				return
+			}
+
+			log.Printf(
+				"worker failed to check monitor %s: %v",
+				m.ID,
+				err,
+			)
+		}
 	}
 }
 
 func (p *CheckWorkerPool) Shutdown() {
 	p.cancel()
+	p.wg.Wait()
 }
