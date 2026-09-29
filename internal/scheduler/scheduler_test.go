@@ -36,12 +36,17 @@ func (f *fakeMonitorSchedulerRepository) SetNextCheckAt(
 
 type fakeCheckQueue struct {
 	jobs []queue.CheckJob
+	err  error
 }
 
 func (f *fakeCheckQueue) EnqueueCheck(
 	ctx context.Context,
 	job queue.CheckJob,
 ) error {
+	if f.err != nil {
+		return f.err
+	}
+
 	f.jobs = append(f.jobs, job)
 	return nil
 }
@@ -193,5 +198,41 @@ func TestSchedulerAdvancesNextCheckAt(t *testing.T) {
 			mon.ID,
 			checkQueue.jobs[0].MonitorID,
 		)
+	}
+}
+
+func TestSchedulerEnqueueFailureLeavesMonitorDue(t *testing.T) {
+	mon, err := monitor.New(
+		"Example",
+		"https://example.com",
+		60*time.Second,
+		5*time.Second,
+		200,
+	)
+	if err != nil {
+		t.Fatalf("failed to create monitor: %v", err)
+	}
+
+	mon.NextCheckAt = time.Now().Add(-10 * time.Second)
+	dueAt := mon.NextCheckAt
+	repository := &fakeMonitorSchedulerRepository{
+		monitors: []*monitor.Monitor{mon},
+	}
+	enqueueErr := context.DeadlineExceeded
+	checkQueue := &fakeCheckQueue{err: enqueueErr}
+	scheduler := New(repository, checkQueue)
+
+	due, err := scheduler.schedule(context.Background())
+	if err != enqueueErr {
+		t.Fatalf("expected enqueue error %v, got %v", enqueueErr, err)
+	}
+	if len(due) != 0 {
+		t.Fatalf("expected no successfully scheduled monitors, got %d", len(due))
+	}
+	if !mon.NextCheckAt.Equal(dueAt) {
+		t.Fatalf("expected next check to remain due at %s, got %s", dueAt, mon.NextCheckAt)
+	}
+	if len(checkQueue.jobs) != 0 {
+		t.Fatalf("expected failed enqueue to add no job, got %d", len(checkQueue.jobs))
 	}
 }

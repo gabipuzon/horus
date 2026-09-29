@@ -74,19 +74,19 @@ func (s *Scheduler) schedule(ctx context.Context) ([]*monitor.Monitor, error) {
 		if !now.Before(m.NextCheckAt) {
 			nextCheckAt := m.NextCheckAt.Add(m.Interval)
 
-			if err := s.repository.SetNextCheckAt(
-				ctx,
-				m.ID,
-				nextCheckAt,
-			); err != nil {
-				return nil, err
-			}
-
 			if err := s.queue.EnqueueCheck(
 				ctx,
 				queue.CheckJob{
 					MonitorID: m.ID,
 				},
+			); err != nil {
+				return nil, err
+			}
+
+			if err := s.repository.SetNextCheckAt(
+				ctx,
+				m.ID,
+				nextCheckAt,
 			); err != nil {
 				return nil, err
 			}
