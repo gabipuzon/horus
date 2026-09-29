@@ -1,4 +1,4 @@
-package monitor
+package check
 
 import (
 	"context"
@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/gabipuzon/horus/internal/monitor"
 )
 
 func TestCheckerTimeout(t *testing.T) {
@@ -17,7 +19,7 @@ func TestCheckerTimeout(t *testing.T) {
 	)
 	defer server.Close()
 
-	m, err := New(
+	m, err := monitor.New(
 		"Slow Server",
 		server.URL,
 		time.Minute,
@@ -54,7 +56,7 @@ func TestChecker(t *testing.T) {
 	)
 	defer server.Close()
 
-	m, err := New(
+	m, err := monitor.New(
 		"Test Server",
 		server.URL,
 		time.Minute,
@@ -99,7 +101,7 @@ func TestCheckerHTTPFailure(t *testing.T) {
 	)
 	defer server.Close()
 
-	m, err := New(
+	m, err := monitor.New(
 		"Broken Server",
 		server.URL,
 		time.Minute,

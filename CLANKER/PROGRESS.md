@@ -4,6 +4,8 @@
 
 Horus has an end-to-end core monitoring flow: manage monitors over HTTP, schedule due checks, enqueue jobs in Redis, execute checks with a bounded worker pool, persist check results in PostgreSQL, and query check history and summaries through the API.
 
+The code is organized by responsibility: `api`, `check`, `database`, `monitor`, `postgres`, `queue`, `scheduler`, and `worker` packages under `internal/`.
+
 ## Implemented
 
 ### Monitor API and persistence
@@ -58,7 +60,7 @@ GET    /monitors/{id}/summary
 
 ## Verification record
 
-The repository includes unit/API tests and PostgreSQL-backed repository tests. Database tests require a reachable local PostgreSQL service and applied migrations. This documentation update did not run tests or change implementation code; no new test result is claimed.
+The repository includes unit/API tests and PostgreSQL/Redis-backed repository and queue tests. Database tests require reachable local services and applied migrations. Run `go test ./...`, `go vet ./...`, and `go build ./...` after changes; record actual outcomes for each implementation task.
 
 ## Next work
 

@@ -1,10 +1,11 @@
-package monitor
+package postgres
 
 import (
 	"context"
 	"testing"
 	"time"
 
+	"github.com/gabipuzon/horus/internal/check"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -57,11 +58,11 @@ func TestCheckRepositoryCreate(t *testing.T) {
 		t.Fatalf("failed to create test monitor: %v", err)
 	}
 
-	result := CheckResult{
+	result := check.Result{
 		StatusCode:  200,
 		Latency:     150 * time.Millisecond,
 		Success:     true,
-		FailureType: FailureNone,
+		FailureType: check.FailureNone,
 	}
 
 	err = repository.Create(ctx, monitorID, result)
@@ -178,18 +179,18 @@ func TestCheckRepositoryListByMonitor(t *testing.T) {
 		t.Fatalf("failed to clean up checks: %v", err)
 	}
 
-	firstResult := CheckResult{
+	firstResult := check.Result{
 		StatusCode:  200,
 		Latency:     100 * time.Millisecond,
 		Success:     true,
-		FailureType: FailureNone,
+		FailureType: check.FailureNone,
 	}
 
-	secondResult := CheckResult{
+	secondResult := check.Result{
 		StatusCode:  500,
 		Latency:     250 * time.Millisecond,
 		Success:     false,
-		FailureType: FailureHTTP,
+		FailureType: check.FailureHTTP,
 	}
 
 	if err := repository.Create(ctx, monitorID, firstResult); err != nil {
@@ -232,10 +233,10 @@ func TestCheckRepositoryListByMonitor(t *testing.T) {
 		t.Fatal("expected newest check to be unsuccessful")
 	}
 
-	if checks[0].FailureType != FailureHTTP {
+	if checks[0].FailureType != check.FailureHTTP {
 		t.Fatalf(
 			"expected failure type %q, got %q",
-			FailureHTTP,
+			check.FailureHTTP,
 			checks[0].FailureType,
 		)
 	}
@@ -315,11 +316,11 @@ func TestCheckRepositoryGetSummary(t *testing.T) {
 	err = repository.Create(
 		ctx,
 		monitorID,
-		CheckResult{
+		check.Result{
 			StatusCode:  200,
 			Latency:     100 * time.Millisecond,
 			Success:     true,
-			FailureType: FailureNone,
+			FailureType: check.FailureNone,
 		},
 	)
 	if err != nil {
@@ -329,11 +330,11 @@ func TestCheckRepositoryGetSummary(t *testing.T) {
 	err = repository.Create(
 		ctx,
 		monitorID,
-		CheckResult{
+		check.Result{
 			StatusCode:  500,
 			Latency:     300 * time.Millisecond,
 			Success:     false,
-			FailureType: FailureHTTP,
+			FailureType: check.FailureHTTP,
 		},
 	)
 	if err != nil {

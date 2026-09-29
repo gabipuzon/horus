@@ -1,25 +1,26 @@
-package monitor
+package postgres
 
 import (
 	"context"
 	"time"
 
+	"github.com/gabipuzon/horus/internal/monitor"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type Repository struct {
+type MonitorRepository struct {
 	db *pgxpool.Pool
 }
 
-func NewRepository(db *pgxpool.Pool) *Repository {
-	return &Repository{
+func NewMonitorRepository(db *pgxpool.Pool) *MonitorRepository {
+	return &MonitorRepository{
 		db: db,
 	}
 }
 
-func (r *Repository) Create(
+func (r *MonitorRepository) Create(
 	ctx context.Context,
-	m *Monitor,
+	m *monitor.Monitor,
 ) error {
 	_, err := r.db.Exec(
 		ctx,
@@ -53,9 +54,9 @@ func (r *Repository) Create(
 	return err
 }
 
-func (r *Repository) List(
+func (r *MonitorRepository) List(
 	ctx context.Context,
-) ([]*Monitor, error) {
+) ([]*monitor.Monitor, error) {
 	rows, err := r.db.Query(
 		ctx,
 		`
@@ -79,10 +80,10 @@ func (r *Repository) List(
 	}
 	defer rows.Close()
 
-	var monitors []*Monitor
+	var monitors []*monitor.Monitor
 
 	for rows.Next() {
-		var m Monitor
+		var m monitor.Monitor
 		var intervalSeconds int
 		var timeoutSeconds int
 
@@ -114,11 +115,11 @@ func (r *Repository) List(
 	return monitors, nil
 }
 
-func (r *Repository) GetByID(
+func (r *MonitorRepository) GetByID(
 	ctx context.Context,
 	id string,
-) (*Monitor, error) {
-	var m Monitor
+) (*monitor.Monitor, error) {
+	var m monitor.Monitor
 	var intervalSeconds int
 	var timeoutSeconds int
 
@@ -162,7 +163,7 @@ func (r *Repository) GetByID(
 	return &m, nil
 }
 
-func (r *Repository) Delete(
+func (r *MonitorRepository) Delete(
 	ctx context.Context,
 	id string,
 ) error {
@@ -178,7 +179,7 @@ func (r *Repository) Delete(
 	return err
 }
 
-func (r *Repository) SetEnabled(
+func (r *MonitorRepository) SetEnabled(
 	ctx context.Context,
 	id string,
 	enabled bool,
@@ -197,7 +198,7 @@ func (r *Repository) SetEnabled(
 	return err
 }
 
-func (r *Repository) SetNextCheckAt(
+func (r *MonitorRepository) SetNextCheckAt(
 	ctx context.Context,
 	id string,
 	nextCheckAt time.Time,

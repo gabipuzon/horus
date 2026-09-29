@@ -213,8 +213,13 @@ horus/
 │       └── main.go
 ├── internal/
 │   ├── api/
+│   ├── check/
 │   ├── database/
-│   └── monitor/
+│   ├── monitor/
+│   ├── postgres/
+│   ├── queue/
+│   ├── scheduler/
+│   └── worker/
 ├── migrations/
 ├── compose.yaml
 ├── go.mod
@@ -232,6 +237,8 @@ PostgreSQL
  ↓
 Scheduler
  ↓
+Redis Queue
+↓
 Worker Pool
  ↓
 HTTP Checker

@@ -11,19 +11,22 @@ import (
 	"time"
 
 	"github.com/gabipuzon/horus/internal/api"
+	"github.com/gabipuzon/horus/internal/check"
 	"github.com/gabipuzon/horus/internal/database"
-	"github.com/gabipuzon/horus/internal/monitor"
+	"github.com/gabipuzon/horus/internal/postgres"
 	"github.com/gabipuzon/horus/internal/queue"
+	"github.com/gabipuzon/horus/internal/scheduler"
+	"github.com/gabipuzon/horus/internal/worker"
 )
 
-type HealthResponse struct {
+type healthResponse struct {
 	Status string `json:"status"`
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	response := HealthResponse{
+	response := healthResponse{
 		Status: "ok",
 	}
 
@@ -67,22 +70,22 @@ func main() {
 	}
 	defer redis.Close()
 
-	monitorRepository := monitor.NewRepository(db)
+	monitorRepository := postgres.NewMonitorRepository(db)
 	monitorHandler := api.NewMonitorHandler(monitorRepository)
 
-	checkRepository := monitor.NewCheckRepository(db)
+	checkRepository := postgres.NewCheckRepository(db)
 	checkHandler := api.NewCheckHandler(
 		checkRepository,
 		checkRepository,
 	)
 
-	checker := monitor.NewChecker(http.DefaultClient)
-	checkService := monitor.NewCheckService(
+	checker := check.NewChecker(http.DefaultClient)
+	checkService := check.NewService(
 		checker,
 		checkRepository,
 	)
 
-	workerPool := monitor.NewCheckWorkerPool(
+	workerPool := worker.NewPool(
 		ctx,
 		3,
 		redis,
@@ -90,13 +93,13 @@ func main() {
 		checkService,
 	)
 
-	scheduler := monitor.NewScheduler(
+	checkScheduler := scheduler.New(
 		monitorRepository,
 		redis,
 	)
 
 	go func() {
-		if err := scheduler.Run(ctx); err != nil &&
+		if err := checkScheduler.Run(ctx); err != nil &&
 			ctx.Err() == nil {
 			log.Printf("scheduler stopped: %v", err)
 		}

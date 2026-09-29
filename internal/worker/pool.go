@@ -1,40 +1,42 @@
-package monitor
+package worker
 
 import (
 	"context"
 	"log"
 	"sync"
 
+	"github.com/gabipuzon/horus/internal/check"
+	"github.com/gabipuzon/horus/internal/monitor"
 	"github.com/gabipuzon/horus/internal/queue"
 )
 
-type CheckJobConsumer interface {
+type checkJobConsumer interface {
 	DequeueCheck(ctx context.Context) (queue.CheckJob, error)
 }
 
-type MonitorLookup interface {
-	GetByID(ctx context.Context, id string) (*Monitor, error)
+type monitorRepository interface {
+	GetByID(ctx context.Context, id string) (*monitor.Monitor, error)
 }
 
-type CheckWorkerPool struct {
-	queue        CheckJobConsumer
-	repository   MonitorLookup
-	checkService *CheckService
+type Pool struct {
+	queue        checkJobConsumer
+	repository   monitorRepository
+	checkService *check.Service
 	ctx          context.Context
 	cancel       context.CancelFunc
 	wg           sync.WaitGroup
 }
 
-func NewCheckWorkerPool(
+func NewPool(
 	ctx context.Context,
 	workerCount int,
-	queue CheckJobConsumer,
-	repository MonitorLookup,
-	checkService *CheckService,
-) *CheckWorkerPool {
+	queue checkJobConsumer,
+	repository monitorRepository,
+	checkService *check.Service,
+) *Pool {
 	workerCtx, cancel := context.WithCancel(ctx)
 
-	pool := &CheckWorkerPool{
+	pool := &Pool{
 		queue:        queue,
 		repository:   repository,
 		checkService: checkService,
@@ -50,7 +52,7 @@ func NewCheckWorkerPool(
 	return pool
 }
 
-func (p *CheckWorkerPool) worker() {
+func (p *Pool) worker() {
 	defer p.wg.Done()
 
 	for {
@@ -92,7 +94,7 @@ func (p *CheckWorkerPool) worker() {
 	}
 }
 
-func (p *CheckWorkerPool) Shutdown() {
+func (p *Pool) Shutdown() {
 	p.cancel()
 	p.wg.Wait()
 }

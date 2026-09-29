@@ -1,31 +1,13 @@
-package monitor
+package postgres
 
 import (
 	"context"
 	"time"
 
+	"github.com/gabipuzon/horus/internal/check"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-type Check struct {
-	ID          string
-	MonitorID   string
-	StatusCode  int
-	Latency     time.Duration
-	Success     bool
-	FailureType FailureType
-	Error       string
-	CheckedAt   time.Time
-}
-
-type CheckSummary struct {
-	TotalChecks      int
-	SuccessfulChecks int
-	FailedChecks     int
-	AverageLatency   time.Duration
-	LatestStatus     int
-}
 
 type CheckRepository struct {
 	db *pgxpool.Pool
@@ -40,9 +22,9 @@ func NewCheckRepository(db *pgxpool.Pool) *CheckRepository {
 func (r *CheckRepository) Create(
 	ctx context.Context,
 	monitorID string,
-	result CheckResult,
+	result check.Result,
 ) error {
-	check := Check{
+	record := check.Record{
 		ID:          uuid.NewString(),
 		MonitorID:   monitorID,
 		StatusCode:  result.StatusCode,
@@ -53,7 +35,7 @@ func (r *CheckRepository) Create(
 	}
 
 	if result.Error != nil {
-		check.Error = result.Error.Error()
+		record.Error = result.Error.Error()
 	}
 
 	_, err := r.db.Exec(
@@ -71,14 +53,14 @@ func (r *CheckRepository) Create(
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		`,
-		check.ID,
-		check.MonitorID,
-		check.StatusCode,
-		check.Latency.Milliseconds(),
-		check.Success,
-		check.FailureType,
-		check.Error,
-		check.CheckedAt,
+		record.ID,
+		record.MonitorID,
+		record.StatusCode,
+		record.Latency.Milliseconds(),
+		record.Success,
+		record.FailureType,
+		record.Error,
+		record.CheckedAt,
 	)
 
 	return err
@@ -89,7 +71,7 @@ func (r *CheckRepository) ListByMonitor(
 	monitorID string,
 	limit int,
 	offset int,
-) ([]Check, error) {
+) ([]check.Record, error) {
 	rows, err := r.db.Query(
 		ctx,
 		`
@@ -117,10 +99,10 @@ func (r *CheckRepository) ListByMonitor(
 	}
 	defer rows.Close()
 
-	var checks []Check
+	var checks []check.Record
 
 	for rows.Next() {
-		var check Check
+		var check check.Record
 		var latencyMs int64
 
 		if err := rows.Scan(
@@ -151,8 +133,8 @@ func (r *CheckRepository) ListByMonitor(
 func (r *CheckRepository) GetSummary(
 	ctx context.Context,
 	monitorID string,
-) (CheckSummary, error) {
-	var summary CheckSummary
+) (check.Summary, error) {
+	var summary check.Summary
 	var averageLatencyMs float64
 
 	err := r.db.QueryRow(
@@ -185,7 +167,7 @@ func (r *CheckRepository) GetSummary(
 		&summary.LatestStatus,
 	)
 	if err != nil {
-		return CheckSummary{}, err
+		return check.Summary{}, err
 	}
 
 	summary.AverageLatency = time.Duration(averageLatencyMs) * time.Millisecond

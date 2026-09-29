@@ -1,34 +1,38 @@
-package monitor
+package check
 
-import "context"
+import (
+	"context"
 
-type CheckResultRepository interface {
+	"github.com/gabipuzon/horus/internal/monitor"
+)
+
+type ResultRepository interface {
 	Create(
 		ctx context.Context,
 		monitorID string,
-		result CheckResult,
+		result Result,
 	) error
 }
 
-type CheckService struct {
+type Service struct {
 	checker    *Checker
-	repository CheckResultRepository
+	repository ResultRepository
 }
 
-func NewCheckService(
+func NewService(
 	checker *Checker,
-	repository CheckResultRepository,
-) *CheckService {
-	return &CheckService{
+	repository ResultRepository,
+) *Service {
+	return &Service{
 		checker:    checker,
 		repository: repository,
 	}
 }
 
-func (s *CheckService) Check(
+func (s *Service) Check(
 	ctx context.Context,
-	m *Monitor,
-) (CheckResult, error) {
+	m *monitor.Monitor,
+) (Result, error) {
 	result := s.checker.Check(ctx, m)
 
 	if err := s.repository.Create(ctx, m.ID, result); err != nil {

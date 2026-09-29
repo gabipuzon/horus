@@ -5,8 +5,8 @@ These conventions describe the current Go code and preferred changes. Security a
 ## Go and packages
 
 - Format Go code with `gofmt`; use idiomatic Go names and conventional acronym casing (`ID`, `URL`, `HTTP`, `API`).
-- Keep packages cohesive by responsibility. Current code is organized under `internal/api`, `internal/database`, `internal/monitor`, and `internal/queue`.
-- Keep SQL in repository code, HTTP transport in API handlers, and checking/scheduling/worker behavior in the monitor package.
+- Keep packages cohesive by responsibility. Current code is organized under `internal/api`, `internal/check`, `internal/database`, `internal/monitor`, `internal/postgres`, `internal/queue`, `internal/scheduler`, and `internal/worker`.
+- Keep SQL in `internal/postgres`, HTTP transport in API handlers, monitor domain behavior in `internal/monitor`, check execution/result types in `internal/check`, scheduling in `internal/scheduler`, and queue consumption in `internal/worker`.
 - Define small interfaces near their consumers where that improves testability. Avoid speculative abstractions and dependencies.
 - Pass `context.Context` to I/O operations, propagate cancellation, and handle errors explicitly with useful context where appropriate.
 - Keep API request/response types explicit and separate from persistence/domain types. Use JSON field names and external units such as `interval_seconds`, `latency_ms`, and RFC3339 timestamps.

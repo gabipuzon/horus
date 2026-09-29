@@ -1,20 +1,21 @@
-package monitor
+package scheduler
 
 import (
 	"context"
 	"testing"
 	"time"
 
+	"github.com/gabipuzon/horus/internal/monitor"
 	"github.com/gabipuzon/horus/internal/queue"
 )
 
 type fakeMonitorSchedulerRepository struct {
-	monitors []*Monitor
+	monitors []*monitor.Monitor
 }
 
 func (f *fakeMonitorSchedulerRepository) List(
 	ctx context.Context,
-) ([]*Monitor, error) {
+) ([]*monitor.Monitor, error) {
 	return f.monitors, nil
 }
 
@@ -48,7 +49,7 @@ func (f *fakeCheckQueue) EnqueueCheck(
 func TestSchedulerSchedule(t *testing.T) {
 	now := time.Now()
 
-	dueMonitor, err := New(
+	dueMonitor, err := monitor.New(
 		"Due",
 		"https://example.com",
 		60*time.Second,
@@ -61,7 +62,7 @@ func TestSchedulerSchedule(t *testing.T) {
 
 	dueMonitor.NextCheckAt = now.Add(-2 * time.Minute)
 
-	notDueMonitor, err := New(
+	notDueMonitor, err := monitor.New(
 		"Not Due",
 		"https://example.com",
 		60*time.Second,
@@ -74,7 +75,7 @@ func TestSchedulerSchedule(t *testing.T) {
 
 	notDueMonitor.NextCheckAt = now.Add(10 * time.Second)
 
-	disabledMonitor, err := New(
+	disabledMonitor, err := monitor.New(
 		"Disabled",
 		"https://example.com",
 		60*time.Second,
@@ -89,7 +90,7 @@ func TestSchedulerSchedule(t *testing.T) {
 	disabledMonitor.Enabled = false
 
 	repository := &fakeMonitorSchedulerRepository{
-		monitors: []*Monitor{
+		monitors: []*monitor.Monitor{
 			dueMonitor,
 			notDueMonitor,
 			disabledMonitor,
@@ -98,7 +99,7 @@ func TestSchedulerSchedule(t *testing.T) {
 
 	checkQueue := &fakeCheckQueue{}
 
-	scheduler := NewScheduler(
+	scheduler := New(
 		repository,
 		checkQueue,
 	)
@@ -139,7 +140,7 @@ func TestSchedulerSchedule(t *testing.T) {
 func TestSchedulerAdvancesNextCheckAt(t *testing.T) {
 	now := time.Now()
 
-	monitor, err := New(
+	mon, err := monitor.New(
 		"Example",
 		"https://example.com",
 		60*time.Second,
@@ -150,15 +151,15 @@ func TestSchedulerAdvancesNextCheckAt(t *testing.T) {
 		t.Fatalf("failed to create monitor: %v", err)
 	}
 
-	monitor.NextCheckAt = now.Add(-10 * time.Second)
+	mon.NextCheckAt = now.Add(-10 * time.Second)
 
 	repository := &fakeMonitorSchedulerRepository{
-		monitors: []*Monitor{monitor},
+		monitors: []*monitor.Monitor{mon},
 	}
 
 	checkQueue := &fakeCheckQueue{}
 
-	scheduler := NewScheduler(
+	scheduler := New(
 		repository,
 		checkQueue,
 	)
@@ -170,12 +171,12 @@ func TestSchedulerAdvancesNextCheckAt(t *testing.T) {
 
 	expected := now.Add(50 * time.Second)
 
-	if monitor.NextCheckAt.Before(expected.Add(-time.Second)) ||
-		monitor.NextCheckAt.After(expected.Add(time.Second)) {
+	if mon.NextCheckAt.Before(expected.Add(-time.Second)) ||
+		mon.NextCheckAt.After(expected.Add(time.Second)) {
 		t.Fatalf(
 			"expected next check around %s, got %s",
 			expected,
-			monitor.NextCheckAt,
+			mon.NextCheckAt,
 		)
 	}
 
@@ -186,10 +187,10 @@ func TestSchedulerAdvancesNextCheckAt(t *testing.T) {
 		)
 	}
 
-	if checkQueue.jobs[0].MonitorID != monitor.ID {
+	if checkQueue.jobs[0].MonitorID != mon.ID {
 		t.Fatalf(
 			"expected queued monitor %q, got %q",
-			monitor.ID,
+			mon.ID,
 			checkQueue.jobs[0].MonitorID,
 		)
 	}

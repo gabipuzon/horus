@@ -9,7 +9,7 @@ import (
 	"github.com/gabipuzon/horus/internal/monitor"
 )
 
-type MonitorRepository interface {
+type monitorRepository interface {
 	Create(ctx context.Context, m *monitor.Monitor) error
 	List(ctx context.Context) ([]*monitor.Monitor, error)
 	GetByID(ctx context.Context, id string) (*monitor.Monitor, error)
@@ -18,7 +18,7 @@ type MonitorRepository interface {
 }
 
 type MonitorHandler struct {
-	repository MonitorRepository
+	repository monitorRepository
 }
 
 type createMonitorRequest struct {
@@ -39,7 +39,7 @@ type monitorResponse struct {
 	Enabled        bool   `json:"enabled"`
 }
 
-func NewMonitorHandler(repository MonitorRepository) *MonitorHandler {
+func NewMonitorHandler(repository monitorRepository) *MonitorHandler {
 	return &MonitorHandler{
 		repository: repository,
 	}

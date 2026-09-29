@@ -1,4 +1,4 @@
-package monitor
+package check
 
 import (
 	"context"
@@ -6,18 +6,20 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/gabipuzon/horus/internal/monitor"
 )
 
 type fakeCheckRepository struct {
 	monitorID string
-	result    CheckResult
+	result    Result
 	called    bool
 }
 
 func (f *fakeCheckRepository) Create(
 	ctx context.Context,
 	monitorID string,
-	result CheckResult,
+	result Result,
 ) error {
 	f.monitorID = monitorID
 	f.result = result
@@ -34,7 +36,7 @@ func TestCheckServiceCheck(t *testing.T) {
 	)
 	defer server.Close()
 
-	monitor, err := New(
+	mon, err := monitor.New(
 		"Example",
 		server.URL,
 		60*time.Second,
@@ -48,11 +50,11 @@ func TestCheckServiceCheck(t *testing.T) {
 	checker := NewChecker(server.Client())
 	repository := &fakeCheckRepository{}
 
-	service := NewCheckService(checker, repository)
+	service := NewService(checker, repository)
 
 	result, err := service.Check(
 		context.Background(),
-		monitor,
+		mon,
 	)
 	if err != nil {
 		t.Fatalf("check failed: %v", err)
@@ -74,10 +76,10 @@ func TestCheckServiceCheck(t *testing.T) {
 		t.Fatal("expected repository Create to be called")
 	}
 
-	if repository.monitorID != monitor.ID {
+	if repository.monitorID != mon.ID {
 		t.Fatalf(
 			"expected monitor ID %q, got %q",
-			monitor.ID,
+			mon.ID,
 			repository.monitorID,
 		)
 	}

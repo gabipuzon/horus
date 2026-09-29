@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gabipuzon/horus/internal/monitor"
+	"github.com/gabipuzon/horus/internal/check"
 )
 
 type fakeCheckRepository struct {
-	checks  []monitor.Check
-	summary monitor.CheckSummary
+	checks  []check.Record
+	summary check.Summary
 }
 
 func (f *fakeCheckRepository) ListByMonitor(
@@ -21,9 +21,9 @@ func (f *fakeCheckRepository) ListByMonitor(
 	monitorID string,
 	limit int,
 	offset int,
-) ([]monitor.Check, error) {
+) ([]check.Record, error) {
 	if offset >= len(f.checks) {
-		return []monitor.Check{}, nil
+		return []check.Record{}, nil
 	}
 
 	end := offset + limit
@@ -48,14 +48,14 @@ func TestListChecks(t *testing.T) {
 	)
 
 	repository := &fakeCheckRepository{
-		checks: []monitor.Check{
+		checks: []check.Record{
 			{
 				ID:          "check-1",
 				MonitorID:   "monitor-1",
 				StatusCode:  200,
 				Latency:     150 * time.Millisecond,
 				Success:     true,
-				FailureType: monitor.FailureNone,
+				FailureType: check.FailureNone,
 				CheckedAt:   checkedAt,
 			},
 		},
@@ -142,7 +142,7 @@ func TestListChecks(t *testing.T) {
 
 func TestListChecksWithLimit(t *testing.T) {
 	repository := &fakeCheckRepository{
-		checks: []monitor.Check{
+		checks: []check.Record{
 			{ID: "check-1", MonitorID: "monitor-1"},
 			{ID: "check-2", MonitorID: "monitor-1"},
 			{ID: "check-3", MonitorID: "monitor-1"},
@@ -184,7 +184,7 @@ func TestListChecksWithLimit(t *testing.T) {
 
 func TestListChecksWithOffset(t *testing.T) {
 	repository := &fakeCheckRepository{
-		checks: []monitor.Check{
+		checks: []check.Record{
 			{ID: "check-1", MonitorID: "monitor-1"},
 			{ID: "check-2", MonitorID: "monitor-1"},
 			{ID: "check-3", MonitorID: "monitor-1"},
@@ -286,13 +286,13 @@ func TestListChecksWithNegativeOffset(t *testing.T) {
 func (f *fakeCheckRepository) GetSummary(
 	ctx context.Context,
 	monitorID string,
-) (monitor.CheckSummary, error) {
+) (check.Summary, error) {
 	return f.summary, nil
 }
 
 func TestGetSummary(t *testing.T) {
 	repository := &fakeCheckRepository{
-		summary: monitor.CheckSummary{
+		summary: check.Summary{
 			TotalChecks:      100,
 			SuccessfulChecks: 95,
 			FailedChecks:     5,

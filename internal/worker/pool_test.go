@@ -1,4 +1,4 @@
-package monitor
+package worker
 
 import (
 	"context"
@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gabipuzon/horus/internal/check"
+	"github.com/gabipuzon/horus/internal/monitor"
 	"github.com/gabipuzon/horus/internal/queue"
 )
 
@@ -18,7 +20,7 @@ type fakeWorkerCheckRepository struct {
 func (f *fakeWorkerCheckRepository) Create(
 	ctx context.Context,
 	monitorID string,
-	result CheckResult,
+	result check.Result,
 ) error {
 	f.monitorID = monitorID
 
@@ -46,13 +48,13 @@ func (f *fakeWorkerQueue) DequeueCheck(
 }
 
 type fakeWorkerMonitorRepository struct {
-	monitor *Monitor
+	monitor *monitor.Monitor
 }
 
 func (f *fakeWorkerMonitorRepository) GetByID(
 	ctx context.Context,
 	id string,
-) (*Monitor, error) {
+) (*monitor.Monitor, error) {
 	if f.monitor.ID != id {
 		return nil, context.DeadlineExceeded
 	}
@@ -68,7 +70,7 @@ func TestCheckWorkerPoolProcessesQueuedMonitor(t *testing.T) {
 	)
 	defer server.Close()
 
-	m, err := New(
+	m, err := monitor.New(
 		"Example",
 		server.URL,
 		time.Minute,
@@ -83,8 +85,8 @@ func TestCheckWorkerPoolProcessesQueuedMonitor(t *testing.T) {
 		called: make(chan struct{}, 1),
 	}
 
-	checker := NewChecker(http.DefaultClient)
-	checkService := NewCheckService(checker, checkRepository)
+	checker := check.NewChecker(http.DefaultClient)
+	checkService := check.NewService(checker, checkRepository)
 
 	checkQueue := &fakeWorkerQueue{
 		jobs: make(chan queue.CheckJob, 1),
@@ -101,7 +103,7 @@ func TestCheckWorkerPoolProcessesQueuedMonitor(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	pool := NewCheckWorkerPool(
+	pool := NewPool(
 		ctx,
 		3,
 		checkQueue,

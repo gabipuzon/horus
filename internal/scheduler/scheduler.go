@@ -1,14 +1,15 @@
-package monitor
+package scheduler
 
 import (
 	"context"
 	"time"
 
+	"github.com/gabipuzon/horus/internal/monitor"
 	"github.com/gabipuzon/horus/internal/queue"
 )
 
-type MonitorSchedulerRepository interface {
-	List(ctx context.Context) ([]*Monitor, error)
+type monitorRepository interface {
+	List(ctx context.Context) ([]*monitor.Monitor, error)
 	SetNextCheckAt(
 		ctx context.Context,
 		id string,
@@ -16,7 +17,7 @@ type MonitorSchedulerRepository interface {
 	) error
 }
 
-type CheckQueue interface {
+type checkQueue interface {
 	EnqueueCheck(
 		ctx context.Context,
 		job queue.CheckJob,
@@ -24,13 +25,13 @@ type CheckQueue interface {
 }
 
 type Scheduler struct {
-	repository MonitorSchedulerRepository
-	queue      CheckQueue
+	repository monitorRepository
+	queue      checkQueue
 }
 
-func NewScheduler(
-	repository MonitorSchedulerRepository,
-	queue CheckQueue,
+func New(
+	repository monitorRepository,
+	queue checkQueue,
 ) *Scheduler {
 	return &Scheduler{
 		repository: repository,
@@ -55,7 +56,7 @@ func (s *Scheduler) Run(ctx context.Context) error {
 	}
 }
 
-func (s *Scheduler) schedule(ctx context.Context) ([]*Monitor, error) {
+func (s *Scheduler) schedule(ctx context.Context) ([]*monitor.Monitor, error) {
 	monitors, err := s.repository.List(ctx)
 	if err != nil {
 		return nil, err
@@ -63,7 +64,7 @@ func (s *Scheduler) schedule(ctx context.Context) ([]*Monitor, error) {
 
 	now := time.Now()
 
-	var due []*Monitor
+	var due []*monitor.Monitor
 
 	for _, m := range monitors {
 		if !m.Enabled {

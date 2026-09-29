@@ -1,10 +1,12 @@
-package monitor
+package check
 
 import (
 	"context"
 	"errors"
 	"net/http"
 	"time"
+
+	"github.com/gabipuzon/horus/internal/monitor"
 )
 
 type FailureType string
@@ -16,7 +18,7 @@ const (
 	FailureTimeout FailureType = "timeout"
 )
 
-type CheckResult struct {
+type Result struct {
 	StatusCode  int
 	Latency     time.Duration
 	Success     bool
@@ -34,7 +36,7 @@ func NewChecker(client *http.Client) *Checker {
 	}
 }
 
-func (c *Checker) Check(ctx context.Context, m *Monitor) CheckResult {
+func (c *Checker) Check(ctx context.Context, m *monitor.Monitor) Result {
 	start := time.Now()
 
 	ctx, cancel := context.WithTimeout(ctx, m.Timeout)
@@ -47,7 +49,7 @@ func (c *Checker) Check(ctx context.Context, m *Monitor) CheckResult {
 		nil,
 	)
 	if err != nil {
-		return CheckResult{
+		return Result{
 			Latency:     time.Since(start),
 			FailureType: FailureNetwork,
 			Error:       err,
@@ -62,7 +64,7 @@ func (c *Checker) Check(ctx context.Context, m *Monitor) CheckResult {
 			failureType = FailureTimeout
 		}
 
-		return CheckResult{
+		return Result{
 			Latency:     time.Since(start),
 			FailureType: failureType,
 			Error:       err,
@@ -73,7 +75,7 @@ func (c *Checker) Check(ctx context.Context, m *Monitor) CheckResult {
 
 	success := response.StatusCode == m.ExpectedStatus
 
-	result := CheckResult{
+	result := Result{
 		StatusCode: response.StatusCode,
 		Latency:    time.Since(start),
 		Success:    success,

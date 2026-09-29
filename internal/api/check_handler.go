@@ -7,28 +7,28 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/gabipuzon/horus/internal/monitor"
+	"github.com/gabipuzon/horus/internal/check"
 )
 
-type CheckRepository interface {
+type checkRepository interface {
 	ListByMonitor(
 		ctx context.Context,
 		monitorID string,
 		limit int,
 		offset int,
-	) ([]monitor.Check, error)
+	) ([]check.Record, error)
 }
 
-type CheckSummaryRepository interface {
+type checkSummaryRepository interface {
 	GetSummary(
 		ctx context.Context,
 		monitorID string,
-	) (monitor.CheckSummary, error)
+	) (check.Summary, error)
 }
 
 type CheckHandler struct {
-	repository        CheckRepository
-	summaryRepository CheckSummaryRepository
+	repository        checkRepository
+	summaryRepository checkSummaryRepository
 }
 
 type checkResponse struct {
@@ -51,8 +51,8 @@ type checkSummaryResponse struct {
 }
 
 func NewCheckHandler(
-	repository CheckRepository,
-	summaryRepository CheckSummaryRepository,
+	repository checkRepository,
+	summaryRepository checkSummaryRepository,
 ) *CheckHandler {
 	return &CheckHandler{
 		repository:        repository,
@@ -60,7 +60,7 @@ func NewCheckHandler(
 	}
 }
 
-func newCheckResponse(check monitor.Check) checkResponse {
+func newCheckResponse(check check.Record) checkResponse {
 	return checkResponse{
 		ID:          check.ID,
 		MonitorID:   check.MonitorID,

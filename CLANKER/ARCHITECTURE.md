@@ -21,15 +21,19 @@ Startup and wiring live in `cmd/server/main.go`. The process expects PostgreSQL 
 ## Packages
 
 ```text
-cmd/server/       process startup, dependency wiring, routes, health handler
-internal/api/     monitor and check HTTP handlers / JSON contracts
-internal/database/ PostgreSQL connection pool
-internal/monitor/ monitor model, repositories, checker, check service, scheduler, workers
-internal/queue/   Redis list client and check job payload
-migrations/       SQL schema migrations
+cmd/server/        process startup, dependency wiring, routes, health handler
+internal/api/      monitor and check HTTP handlers / JSON contracts
+internal/check/    check result types, HTTP checker, check service
+internal/database/ PostgreSQL connection pool construction
+internal/monitor/  monitor domain model and validation
+internal/postgres/ PostgreSQL monitor and check repositories
+internal/queue/    Redis list client and check job payload
+internal/scheduler/ due-monitor scheduling
+internal/worker/   bounded check worker pool
+migrations/        SQL schema migrations
 ```
 
-There are no separate `check`, `incident`, `notification`, or `worker` packages in the current repository; check and worker functionality lives in `internal/monitor`.
+The domain packages do not import PostgreSQL. Repository implementations in `internal/postgres` depend on the domain packages and `pgxpool`.
 
 ## Runtime flow
 
@@ -69,7 +73,7 @@ GET    /monitors/{id}/checks
 GET    /monitors/{id}/summary
 ```
 
-Handlers use repository interfaces defined at the API boundary. Check history accepts `limit` (default 50, range 1–100) and `offset` (default 0, nonnegative), and returns rows newest first. The summary reports counts, average latency, and latest HTTP status; no checks yields zero values. Unknown/malformed pagination values that fail integer parsing currently fall back to defaults.
+Handlers use small repository interfaces defined at the API boundary. Check history accepts `limit` (default 50, range 1–100) and `offset` (default 0, nonnegative), and returns rows newest first. The summary reports counts, average latency, and latest HTTP status; no checks yields zero values. Unknown/malformed pagination values that fail integer parsing currently fall back to defaults.
 
 ## Boundaries and limitations
 
