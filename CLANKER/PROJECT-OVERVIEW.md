@@ -18,7 +18,7 @@ Horus is a self-hosted uptime monitoring service written in Go. It stores HTTP m
 - Run checks using a bounded pool of three workers.
 - Record status code, latency, success, failure category, optional error text, and timestamp in PostgreSQL.
 - Classify unsuccessful results as `http`, `network`, or `timeout`; successful results have an empty failure category.
-- List checks newest first with limit/offset pagination and return aggregate count/latency/latest-status summaries with check-based uptime percentage.
+- List checks newest first with strict limit/offset pagination, returning `[]` for an existing monitor without checks. Return aggregate count/latency/latest-status summaries with check-based uptime percentage; missing or malformed monitor IDs return `404` on both routes.
 
 ### Incidents
 
@@ -48,12 +48,12 @@ Horus is a self-hosted uptime monitoring service written in Go. It stores HTTP m
 | `DELETE` | `/monitors/{id}` | Deletes a monitor; returns `204` |
 | `PATCH` | `/monitors/{id}/enable` | Enables a monitor; returns `204` |
 | `PATCH` | `/monitors/{id}/disable` | Disables a monitor; returns `204` |
-| `GET` | `/monitors/{id}/checks` | Lists checks; `limit` defaults to 50 and must be 1–100, `offset` defaults to 0 and must be nonnegative |
-| `GET` | `/monitors/{id}/summary` | Returns check counts, average latency, latest status code, and check-based uptime percentage |
+| `GET` | `/monitors/{id}/checks` | Lists newest checks; `limit` defaults to 50 and must be 1–100, `offset` defaults to 0 and must be nonnegative; invalid values return `400` |
+| `GET` | `/monitors/{id}/summary` | Returns check counts, average latency in whole milliseconds, latest status code, and check-based uptime percentage |
 | `GET` | `/monitors/{id}/incidents` | Lists incidents newest first with `limit` (1–100, default 50) and nonnegative `offset` (default 0) |
 | `GET` | `/monitors/{id}/incidents/current` | Returns the open incident, or `204` when none is open |
 
-Monitor JSON fields are `id`, `name`, `url`, `interval_seconds`, `timeout_seconds`, `expected_status`, and `enabled`. Check rows include `id`, `monitor_id`, `status_code`, `latency_ms`, `success`, `failure_type`, optional `error`, and RFC3339 `checked_at`. Summary fields are `total_checks`, `successful_checks`, `failed_checks`, `average_latency_ms`, `latest_status`, and `uptime_percentage`. The percentage is `successful_checks / total_checks × 100`, rounded to two decimals; it is `null` with no checks and is not time weighted. Incident rows include start and optional resolution timestamps, `is_open`, `duration_ms`, and initial failure context. Open duration is elapsed at response time; resolved duration ends at `resolved_at`. Missing monitors return `404` on check and incident data routes.
+Monitor JSON fields are `id`, `name`, `url`, `interval_seconds`, `timeout_seconds`, `expected_status`, and `enabled`. Check rows include `id`, `monitor_id`, `status_code`, `latency_ms`, `success`, `failure_type`, optional `error`, and RFC3339 `checked_at`; 0 status means no HTTP response. Summary fields are `total_checks`, `successful_checks`, `failed_checks`, `average_latency_ms`, `latest_status`, and `uptime_percentage`. The percentage is `successful_checks / total_checks × 100`, rounded to two decimals; it is `null` with no checks and is not time weighted. The average latency is truncated to whole milliseconds, and latest status 0 means no HTTP response on the newest check or no checks. Incident rows include start and optional resolution timestamps, `is_open`, `duration_ms`, and initial failure context. Open duration is elapsed at response time; resolved duration ends at `resolved_at`. Missing monitors return `404` on check and incident data routes; malformed UUIDs also return `404` on check routes.
 
 ## Not implemented yet
 

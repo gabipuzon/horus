@@ -196,6 +196,14 @@ Pagination is supported:
 curl "http://localhost:8080/monitors/MONITOR_ID/checks?limit=20&offset=0"
 ```
 
+Checks are returned newest first by `checked_at` (with check ID breaking timestamp
+ties). `limit` defaults to 50 and must be 1–100; `offset` defaults to 0 and must
+be nonnegative. Invalid or empty pagination values return `400`. An existing
+monitor with no checks returns `200` and `[]`; a missing or malformed monitor ID
+returns `404`. Each check includes its ID, monitor ID, HTTP status (0 if no
+response was received), latency in milliseconds, success, failure type, and
+check time. A stored error message is included when present.
+
 ## Viewing a Summary
 
 ```bash
@@ -210,9 +218,18 @@ Example:
   "successful_checks": 9,
   "failed_checks": 1,
   "average_latency_ms": 42,
-  "latest_status": 200
+  "latest_status": 200,
+  "uptime_percentage": 90
 }
 ```
+
+`uptime_percentage` is successful persisted checks divided by all persisted
+checks, multiplied by 100 and rounded to two decimal places. It measures check
+outcomes, not elapsed uptime. `average_latency_ms` is the average of persisted
+latencies, truncated to whole milliseconds. `latest_status` comes from the
+newest check; 0 means that check received no HTTP response. For an existing
+monitor with no checks, all count, latency, and status fields are 0 and
+`uptime_percentage` is `null`. A missing or malformed monitor ID returns `404`.
 
 ## Testing Failure Detection
 

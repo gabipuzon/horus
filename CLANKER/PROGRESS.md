@@ -18,8 +18,8 @@ The code is organized by responsibility: `api`, `check`, `config`, `database`, `
 
 - HTTP GET checker with monitor timeout, latency measurement, expected-status comparison, and `http`/`network`/`timeout` failure classification.
 - PostgreSQL check repository, foreign-key cascade, and monitor/time history index.
-- Check history endpoint with `limit`/`offset` pagination (default limit 50, maximum 100).
-- Summary endpoint with total/success/failure counts, average latency, latest HTTP status, and check-based uptime percentage. Uptime is successful checks divided by all persisted checks, rounded to two decimals; it is `null` when there are no checks.
+- Check history endpoint returns newest checks first, using check ID to break equal timestamp ties. `limit` defaults to 50 (allowed 1–100) and `offset` to 0 (nonnegative); malformed or out-of-range values return `400`. Existing monitors without checks return `200 []`; missing or malformed monitor IDs return `404`.
+- Summary endpoint reports total/success/failure counts, average persisted latency truncated to whole milliseconds, latest HTTP status, and check-based uptime. Uptime is successful checks divided by all persisted checks, rounded to two decimals. With no checks, uptime is `null` and the other fields are zero; latest status 0 also represents a newest check without an HTTP response.
 
 ### Incident lifecycle
 
@@ -84,6 +84,7 @@ GET    /monitors/{id}/incidents/current
 - PostgreSQL/Redis addresses and credentials, HTTP listen address, worker count, and optional Discord webhook are configurable through `HORUS_DB_HOST`, `HORUS_DB_PORT`, `HORUS_DB_USER`, `HORUS_DB_PASSWORD`, `HORUS_DB_NAME`, `HORUS_REDIS_HOST`, `HORUS_REDIS_PORT`, `HORUS_HTTP_ADDR`, `HORUS_WORKER_COUNT`, and `HORUS_DISCORD_WEBHOOK_URL`. Local Compose-compatible defaults are used when unset. Legacy schemas created manually before `schema_migrations` need an explicit baseline or fresh volume; migrations are not inferred from existing tables.
 - Monitor enable/disable and delete handlers do not distinguish a missing ID from a successful update/delete.
 - Checker uses `http.DefaultClient`; status mismatch is checked against one exact expected status.
+- Offset-based check history pages can shift when new checks arrive between requests.
 
 ## Verification record
 
@@ -97,6 +98,8 @@ For containerization and migrations, integration tests covered fresh, repeated, 
 
 For CI, the local migration command applied four versions on an isolated fresh PostgreSQL service and zero on a repeated run. `go test ./...`, `go test -race ./...`, `go vet ./...`, `go build ./...`, `git diff --check`, and `docker build .` passed with local services. The Redis queue race test passed three consecutive runs after moving its jobs to DB 14. The GitHub-hosted workflow has not yet been run.
 
+For Phase 8B, API tests cover strict pagination, empty history and summary responses, missing and malformed monitor IDs, and safe repository errors. PostgreSQL integration tests cover empty, successful, failed, and mixed check sets; pagination and timestamp ties; nullable failure fields; latest status; and integer-millisecond average latency. `go test ./internal/api/...`, `go test ./internal/postgres/...`, `go test ./...`, `go test -race ./...`, `go vet ./...`, `go build ./...`, and `git diff --check` passed with local services.
+
 ## Next work
 
-Phase 8 has not been scoped. Authentication/authorization, queue recovery, telemetry, and durable notification delivery remain future work.
+Phase 8B check history/summary semantics are implemented. Phase 8C incident API polish is next. Authentication/authorization, queue recovery, telemetry, and durable notification delivery remain future work.

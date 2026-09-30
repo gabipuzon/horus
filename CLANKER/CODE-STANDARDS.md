@@ -31,6 +31,7 @@ GET    /monitors/{id}/incidents/current
 ```
 
 Handlers decode and validate request-level input, call repository/application behavior, then encode responses and status codes. Do not put SQL, scheduling, or checker algorithms in handlers. Preserve existing status behavior unless deliberately changing the API contract: create returns `201`, delete and enable/disable return `204`, and list/retrieve/history/summary return JSON `200` responses.
+Check history pagination uses `limit` 1–100 (default 50) and nonnegative `offset` (default 0), rejecting malformed values with `400`. Check history and summary return `404` for missing or malformed monitor IDs; an existing monitor with no checks returns `[]` for history and zero summary fields with null uptime.
 
 ## Persistence and reliability
 
