@@ -26,9 +26,27 @@ type checkSummaryRepository interface {
 	) (check.Summary, error)
 }
 
+type monitorExistenceRepository interface {
+	Exists(ctx context.Context, id string) (bool, error)
+}
+
+func requireMonitor(w http.ResponseWriter, r *http.Request, repository monitorExistenceRepository) bool {
+	exists, err := repository.Exists(r.Context(), r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "failed to find monitor", http.StatusInternalServerError)
+		return false
+	}
+	if !exists {
+		http.Error(w, "monitor not found", http.StatusNotFound)
+		return false
+	}
+	return true
+}
+
 type CheckHandler struct {
 	repository        checkRepository
 	summaryRepository checkSummaryRepository
+	monitors          monitorExistenceRepository
 }
 
 type checkResponse struct {
@@ -43,20 +61,23 @@ type checkResponse struct {
 }
 
 type checkSummaryResponse struct {
-	TotalChecks      int   `json:"total_checks"`
-	SuccessfulChecks int   `json:"successful_checks"`
-	FailedChecks     int   `json:"failed_checks"`
-	AverageLatencyMs int64 `json:"average_latency_ms"`
-	LatestStatus     int   `json:"latest_status"`
+	TotalChecks      int      `json:"total_checks"`
+	SuccessfulChecks int      `json:"successful_checks"`
+	FailedChecks     int      `json:"failed_checks"`
+	AverageLatencyMs int64    `json:"average_latency_ms"`
+	LatestStatus     int      `json:"latest_status"`
+	UptimePercentage *float64 `json:"uptime_percentage"`
 }
 
 func NewCheckHandler(
 	repository checkRepository,
 	summaryRepository checkSummaryRepository,
+	monitors monitorExistenceRepository,
 ) *CheckHandler {
 	return &CheckHandler{
 		repository:        repository,
 		summaryRepository: summaryRepository,
+		monitors:          monitors,
 	}
 }
 
@@ -111,6 +132,9 @@ func (h *CheckHandler) ListByMonitor(
 		)
 		return
 	}
+	if !requireMonitor(w, r, h.monitors) {
+		return
+	}
 
 	checks, err := h.repository.ListByMonitor(
 		r.Context(),
@@ -150,6 +174,9 @@ func (h *CheckHandler) GetSummary(
 	r *http.Request,
 ) {
 	monitorID := r.PathValue("id")
+	if !requireMonitor(w, r, h.monitors) {
+		return
+	}
 
 	summary, err := h.summaryRepository.GetSummary(
 		r.Context(),
@@ -170,6 +197,7 @@ func (h *CheckHandler) GetSummary(
 		FailedChecks:     summary.FailedChecks,
 		AverageLatencyMs: summary.AverageLatency.Milliseconds(),
 		LatestStatus:     summary.LatestStatus,
+		UptimePercentage: summary.UptimePercentage(),
 	}
 
 	w.Header().Set("Content-Type", "application/json")

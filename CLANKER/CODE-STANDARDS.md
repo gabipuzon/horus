@@ -25,6 +25,8 @@ PATCH  /monitors/{id}/enable
 PATCH  /monitors/{id}/disable
 GET    /monitors/{id}/checks
 GET    /monitors/{id}/summary
+GET    /monitors/{id}/incidents
+GET    /monitors/{id}/incidents/current
 ```
 
 Handlers decode and validate request-level input, call repository/application behavior, then encode responses and status codes. Do not put SQL, scheduling, or checker algorithms in handlers. Preserve existing status behavior unless deliberately changing the API contract: create returns `201`, delete and enable/disable return `204`, and list/retrieve/history/summary return JSON `200` responses.
@@ -33,7 +35,7 @@ Handlers decode and validate request-level input, call repository/application be
 
 - PostgreSQL repositories use parameterized queries and receive request/job context.
 - Schema changes belong in ordered SQL files under `migrations/`; startup currently does not apply migrations.
-- PostgreSQL holds durable monitor/check state; Redis currently carries jobs on `horus:checks`.
+- PostgreSQL holds durable monitor, check, and incident state; Redis currently carries jobs on `horus:checks`.
 - Keep worker concurrency bounded and respect cancellation. Current process starts three workers.
 - Test domain behavior and handler contracts with focused tests. Repository tests connect to a local PostgreSQL instance, so they require the database and applied migrations.
 

@@ -2,7 +2,7 @@
 
 ## Current state
 
-Horus has an end-to-end core monitoring flow: manage monitors over HTTP, schedule due checks, enqueue jobs in Redis, execute checks with a bounded worker pool, persist check results in PostgreSQL, and query check history and summaries through the API.
+Horus has an end-to-end core monitoring flow: manage monitors over HTTP, schedule due checks, enqueue jobs in Redis, execute checks with a bounded worker pool, persist checks and incidents in PostgreSQL, and query check and incident data through the API.
 
 The code is organized by responsibility: `api`, `check`, `database`, `incident`, `monitor`, `postgres`, `queue`, `scheduler`, and `worker` packages under `internal/`.
 
@@ -19,7 +19,7 @@ The code is organized by responsibility: `api`, `check`, `database`, `incident`,
 - HTTP GET checker with monitor timeout, latency measurement, expected-status comparison, and `http`/`network`/`timeout` failure classification.
 - PostgreSQL check repository, foreign-key cascade, and monitor/time history index.
 - Check history endpoint with `limit`/`offset` pagination (default limit 50, maximum 100).
-- Summary endpoint with total/success/failure counts, average latency, and latest HTTP status.
+- Summary endpoint with total/success/failure counts, average latency, latest HTTP status, and check-based uptime percentage. Uptime is successful checks divided by all persisted checks, rounded to two decimals; it is `null` when there are no checks.
 
 ### Incident lifecycle
 
@@ -27,10 +27,11 @@ The code is organized by responsibility: `api`, `check`, `database`, `incident`,
 - At most one open incident per monitor is enforced by a partial unique index. Repeated failures leave the existing incident and its initial failure context unchanged; a successful check resolves it.
 - Check results are persisted before incident transitions. If a transition fails, the check remains stored and the check service returns an explicit transition error.
 - Migration `004_create_incidents.sql` adds incident storage and indexes. Migrations remain manual.
+- Incident history is paginated newest first. The current incident endpoint returns the open incident or `204` when none is open. Responses include timestamps, open state, initial failure context, and elapsed or resolved duration in milliseconds.
 
 ### Scheduling and workers
 
-- One-second scheduler selects enabled monitors whose `next_check_at` is due, advances their schedule, and queues jobs in Redis list `horus:checks`.
+- One-second scheduler selects enabled monitors whose `next_check_at` is due, queues jobs in Redis list `horus:checks`, then advances their schedule.
 - Redis client provides ping, enqueue (`LPUSH`), and blocking dequeue (`BRPOP`).
 - Application starts three workers in the same process; workers load monitors, run checks, and persist results.
 - Process handles interrupt/SIGTERM, cancels and joins workers, and gracefully shuts down the HTTP server.
@@ -52,11 +53,13 @@ PATCH  /monitors/{id}/enable
 PATCH  /monitors/{id}/disable
 GET    /monitors/{id}/checks
 GET    /monitors/{id}/summary
+GET    /monitors/{id}/incidents
+GET    /monitors/{id}/incidents/current
 ```
 
 ## Known gaps and limitations
 
-- No incident API, uptime calculation, or notifications.
+- No notifications or time-weighted uptime calculation; the reported percentage counts check outcomes.
 - No user accounts, authentication, authorization, or monitor ownership.
 - The checker accepts only absolute HTTP/HTTPS URLs without embedded credentials, rejects non-public DNS results at connection time, and does not follow redirects. Other SSRF edge cases should continue to be reviewed as the service is hardened.
 - No check execution retries, duplicate-job protection, or queue recovery/dead-letter handling. Scheduling errors are retried on the next tick, and workers back off after dequeue errors.
@@ -67,8 +70,8 @@ GET    /monitors/{id}/summary
 
 ## Verification record
 
-The repository includes unit/API tests and PostgreSQL/Redis-backed repository and queue tests. Database tests require reachable local services and applied migrations. For the incident lifecycle change, focused check/worker tests and `go vet ./...` passed; `go test ./...` failed because migration `004_create_incidents.sql` had not been applied to the configured database. `git diff --check` passed.
+The repository includes unit/API tests and PostgreSQL/Redis-backed repository and queue tests. Database tests require reachable local services and applied migrations. For the incident API change, `go test ./internal/api`, `go test ./internal/postgres`, `go test ./...`, `go vet ./...`, and `git diff --check` passed with the configured local services and migration `004_create_incidents.sql` present.
 
 ## Next work
 
-Add incident history and a clearly defined uptime view through the API, then continue production hardening with authentication/authorization, queue recovery, readiness and operational telemetry. Notifications remain future product capabilities.
+Continue production hardening with authentication/authorization, queue recovery, readiness and operational telemetry. Notifications remain future product capabilities.

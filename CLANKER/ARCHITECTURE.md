@@ -2,7 +2,7 @@
 
 ## Current system
 
-Horus is a single Go process with an HTTP API, scheduler, and worker pool. PostgreSQL stores monitor configuration and check history. Redis transports check jobs between the scheduler and workers.
+Horus is a single Go process with an HTTP API, scheduler, and worker pool. PostgreSQL stores monitor configuration, check history, and incidents. Redis transports check jobs between the scheduler and workers.
 
 ```text
 HTTP client ──> net/http API ──> PostgreSQL
@@ -22,12 +22,12 @@ Startup and wiring live in `cmd/server/main.go`; environment parsing and validat
 
 ```text
 cmd/server/        process startup, dependency wiring, routes, health handler
-internal/api/      monitor and check HTTP handlers / JSON contracts
+internal/api/      monitor, check, and incident HTTP handlers / JSON contracts
 internal/check/    check result types, HTTP checker, check service and incident transitions
 internal/incident/ incident domain model and failure context
 internal/database/ PostgreSQL connection pool construction
 internal/monitor/  monitor domain model and validation
-internal/postgres/ PostgreSQL monitor and check repositories
+internal/postgres/ PostgreSQL monitor, check, and incident repositories
 internal/queue/    Redis list client and check job payload
 internal/scheduler/ due-monitor scheduling
 internal/worker/   bounded check worker pool
@@ -72,9 +72,13 @@ PATCH  /monitors/{id}/enable
 PATCH  /monitors/{id}/disable
 GET    /monitors/{id}/checks
 GET    /monitors/{id}/summary
+GET    /monitors/{id}/incidents
+GET    /monitors/{id}/incidents/current
 ```
 
-Handlers use small repository interfaces defined at the API boundary. Check history accepts `limit` (default 50, range 1–100) and `offset` (default 0, nonnegative), and returns rows newest first. The summary reports counts, average latency, and latest HTTP status; no checks yields zero values. Unknown/malformed pagination values that fail integer parsing currently fall back to defaults.
+Handlers use small repository interfaces defined at the API boundary. Check and incident history accept `limit` (default 50, range 1–100) and `offset` (default 0, nonnegative), and return rows newest first. Incident history rejects malformed pagination with `400`; check history retains its existing parsing behavior, which falls back to defaults for noninteger values. Incident history returns `[]` when empty. The current incident route returns the open incident or `204` when none is open. Both routes return `404` for a missing monitor. Incident responses include start and optional resolution timestamps, open state, initial failure context, and duration in milliseconds: elapsed time at response for an open incident and start-to-resolution time for a resolved one.
+
+The summary reports counts, average latency, latest HTTP status, and `uptime_percentage`. Uptime is `successful_checks / total_checks × 100`, rounded to two decimals. It counts persisted check outcomes and is not time weighted; no checks yields `null` uptime and zero values for the other summary fields. Check history and summary also return `404` for a missing monitor.
 
 ## Boundaries and limitations
 
@@ -82,4 +86,4 @@ Handlers use small repository interfaces defined at the API boundary. Check hist
 - The scheduler currently shares one process with API and workers; Redis does not imply independently deployed workers.
 - Worker count and service settings are configurable through environment variables, but there is no production configuration profile or secret management.
 - The checker allows only HTTP/HTTPS URLs without user information, blocks non-public DNS results during dialing, and does not follow redirects. SSRF defenses should still be reviewed and extended as needed.
-- There is no authentication, authorization, readiness endpoint, metrics, incident API, uptime calculation, or notification subsystem. Check persistence and incident transitions are separate operations rather than one transaction, so a transition failure can leave incident state that does not reflect the latest persisted check until a later check transitions it.
+- There is no authentication, authorization, readiness endpoint, metrics, or notification subsystem. Uptime reflects the proportion of successful checks rather than elapsed availability. Check persistence and incident transitions are separate operations rather than one transaction, so a transition failure can leave incident state that does not reflect the latest persisted check until a later check transitions it.

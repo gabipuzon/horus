@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,8 +13,14 @@ import (
 )
 
 type fakeCheckRepository struct {
-	checks  []check.Record
-	summary check.Summary
+	checks    []check.Record
+	summary   check.Summary
+	missing   bool
+	existsErr error
+}
+
+func (f *fakeCheckRepository) Exists(ctx context.Context, id string) (bool, error) {
+	return !f.missing, f.existsErr
 }
 
 func (f *fakeCheckRepository) ListByMonitor(
@@ -61,7 +68,7 @@ func TestListChecks(t *testing.T) {
 		},
 	}
 
-	handler := NewCheckHandler(repository, repository)
+	handler := NewCheckHandler(repository, repository, repository)
 
 	request := httptest.NewRequest(
 		http.MethodGet,
@@ -149,7 +156,7 @@ func TestListChecksWithLimit(t *testing.T) {
 		},
 	}
 
-	handler := NewCheckHandler(repository, repository)
+	handler := NewCheckHandler(repository, repository, repository)
 
 	request := httptest.NewRequest(
 		http.MethodGet,
@@ -191,7 +198,7 @@ func TestListChecksWithOffset(t *testing.T) {
 		},
 	}
 
-	handler := NewCheckHandler(repository, repository)
+	handler := NewCheckHandler(repository, repository, repository)
 
 	request := httptest.NewRequest(
 		http.MethodGet,
@@ -234,7 +241,7 @@ func TestListChecksWithOffset(t *testing.T) {
 func TestListChecksWithInvalidLimit(t *testing.T) {
 	repository := &fakeCheckRepository{}
 
-	handler := NewCheckHandler(repository, repository)
+	handler := NewCheckHandler(repository, repository, repository)
 
 	request := httptest.NewRequest(
 		http.MethodGet,
@@ -260,7 +267,7 @@ func TestListChecksWithInvalidLimit(t *testing.T) {
 func TestListChecksWithNegativeOffset(t *testing.T) {
 	repository := &fakeCheckRepository{}
 
-	handler := NewCheckHandler(repository, repository)
+	handler := NewCheckHandler(repository, repository, repository)
 
 	request := httptest.NewRequest(
 		http.MethodGet,
@@ -301,7 +308,7 @@ func TestGetSummary(t *testing.T) {
 		},
 	}
 
-	handler := NewCheckHandler(repository, repository)
+	handler := NewCheckHandler(repository, repository, repository)
 
 	request := httptest.NewRequest(
 		http.MethodGet,
@@ -362,5 +369,59 @@ func TestGetSummary(t *testing.T) {
 			"expected latest status 500, got %d",
 			response.LatestStatus,
 		)
+	}
+	if response.UptimePercentage == nil || *response.UptimePercentage != 95 {
+		t.Fatalf("expected 95%% check uptime, got %v", response.UptimePercentage)
+	}
+}
+
+func TestGetSummaryWithoutChecks(t *testing.T) {
+	repository := &fakeCheckRepository{}
+	handler := NewCheckHandler(repository, repository, repository)
+	request := httptest.NewRequest(http.MethodGet, "/monitors/monitor-1/summary", nil)
+	request.SetPathValue("id", "monitor-1")
+	recorder := httptest.NewRecorder()
+	handler.GetSummary(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", recorder.Code)
+	}
+	var response checkSummaryResponse
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if response.TotalChecks != 0 || response.UptimePercentage != nil {
+		t.Fatalf("expected zero checks and undefined uptime, got %+v", response)
+	}
+}
+
+func TestCheckEndpointsRequireExistingMonitor(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		missing   bool
+		existsErr error
+		want      int
+	}{
+		{name: "missing", missing: true, want: http.StatusNotFound},
+		{name: "repository error", existsErr: errors.New("database unavailable"), want: http.StatusInternalServerError},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repository := &fakeCheckRepository{missing: test.missing, existsErr: test.existsErr}
+			handler := NewCheckHandler(repository, repository, repository)
+			for _, endpoint := range []struct {
+				path  string
+				serve http.HandlerFunc
+			}{
+				{path: "/checks", serve: handler.ListByMonitor},
+				{path: "/summary", serve: handler.GetSummary},
+			} {
+				request := httptest.NewRequest(http.MethodGet, "/monitors/monitor-1"+endpoint.path, nil)
+				request.SetPathValue("id", "monitor-1")
+				recorder := httptest.NewRecorder()
+				endpoint.serve(recorder, request)
+				if recorder.Code != test.want {
+					t.Fatalf("%s: expected %d, got %d", endpoint.path, test.want, recorder.Code)
+				}
+			}
+		})
 	}
 }

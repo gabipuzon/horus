@@ -5,11 +5,22 @@ import (
 	"time"
 
 	"github.com/gabipuzon/horus/internal/monitor"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type MonitorRepository struct {
 	db *pgxpool.Pool
+}
+
+func (r *MonitorRepository) Exists(ctx context.Context, id string) (bool, error) {
+	if _, err := uuid.Parse(id); err != nil {
+		return false, nil
+	}
+
+	var exists bool
+	err := r.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM monitors WHERE id = $1)`, id).Scan(&exists)
+	return exists, err
 }
 
 func NewMonitorRepository(db *pgxpool.Pool) *MonitorRepository {

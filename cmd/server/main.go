@@ -82,7 +82,9 @@ func main() {
 	checkHandler := api.NewCheckHandler(
 		checkRepository,
 		checkRepository,
+		monitorRepository,
 	)
+	incidentHandler := api.NewIncidentHandler(postgres.NewIncidentRepository(db), monitorRepository)
 
 	checker := check.NewChecker(http.DefaultClient)
 	checkService := check.NewService(
@@ -128,6 +130,8 @@ func main() {
 		"GET /monitors/{id}/summary",
 		checkHandler.GetSummary,
 	)
+	mux.HandleFunc("GET /monitors/{id}/incidents", incidentHandler.ListByMonitor)
+	mux.HandleFunc("GET /monitors/{id}/incidents/current", incidentHandler.GetCurrent)
 
 	server := &http.Server{
 		Addr:    cfg.HTTPAddr,
