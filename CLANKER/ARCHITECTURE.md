@@ -23,7 +23,8 @@ Startup and wiring live in `cmd/server/main.go`; environment parsing and validat
 ```text
 cmd/server/        process startup, dependency wiring, routes, health handler
 internal/api/      monitor and check HTTP handlers / JSON contracts
-internal/check/    check result types, HTTP checker, check service
+internal/check/    check result types, HTTP checker, check service and incident transitions
+internal/incident/ incident domain model and failure context
 internal/database/ PostgreSQL connection pool construction
 internal/monitor/  monitor domain model and validation
 internal/postgres/ PostgreSQL monitor and check repositories
@@ -45,7 +46,7 @@ The API decodes and validates monitor creation through `monitor.New`, then calls
 
 The scheduler wakes every second, lists monitors, skips disabled or not-yet-due monitors, advances each due monitor's `next_check_at` by one interval, and pushes a `MonitorID` job to Redis. Redis uses the `horus:checks` list (`LPUSH`/blocking `BRPOP`). Three workers are started at process startup. Each worker loads the monitor, runs the checker through `CheckService`, and persists the result.
 
-The checker performs a GET with a timeout derived from the monitor, measures elapsed time, and compares the response status to `expected_status`. Request errors are classified as `network` or `timeout`; mismatched HTTP responses are `http`. The check service persists both successful and failed results. There is no retry, backoff, job acknowledgement/dead-letter strategy, duplicate suppression, or incident processing implemented.
+The checker performs a GET with a timeout derived from the monitor, measures elapsed time, and compares the response status to `expected_status`. Request errors are classified as `network` or `timeout`; mismatched HTTP responses are `http`. The check service persists every result first, then opens an incident for failures or resolves the open incident after success. Repeated failures are idempotent at the repository level and preserve the first failure context. If the incident transition fails, the check remains persisted and the service returns an explicit error. There is no retry, backoff, job acknowledgement/dead-letter strategy, or duplicate-job suppression.
 
 ### Shutdown
 
@@ -53,9 +54,9 @@ Interrupt and SIGTERM cancel the root context. Workers are cancelled and joined,
 
 ## Persistence
 
-Migrations are plain SQL files and are not applied automatically by startup. Apply `001_create_monitors.sql`, `002_create_checks.sql`, then `003_add_monitor_next_check_at.sql` in order.
+Migrations are plain SQL files and are not applied automatically by startup. Apply `001_create_monitors.sql`, `002_create_checks.sql`, `003_add_monitor_next_check_at.sql`, then `004_create_incidents.sql` in order.
 
-`monitors` stores UUID, name, URL, interval/timeout in seconds, expected status, enabled flag, timestamps, and (after migration 003) `next_check_at`. `checks` stores UUID, monitor foreign key with cascade delete, nullable status code, latency in milliseconds, success, failure type, nullable error, and check timestamp. An index supports per-monitor history ordered by recent check time.
+`monitors` stores UUID, name, URL, interval/timeout in seconds, expected status, enabled flag, timestamps, and (after migration 003) `next_check_at`. `checks` stores UUID, monitor foreign key with cascade delete, nullable status code, latency in milliseconds, success, failure type, nullable error, and check timestamp. An index supports per-monitor history ordered by recent check time. `incidents` stores outage start, optional resolution, and initial failure context. A partial unique index permits only one unresolved incident per monitor.
 
 ## HTTP API
 
@@ -81,4 +82,4 @@ Handlers use small repository interfaces defined at the API boundary. Check hist
 - The scheduler currently shares one process with API and workers; Redis does not imply independently deployed workers.
 - Worker count and service settings are configurable through environment variables, but there is no production configuration profile or secret management.
 - The checker allows only HTTP/HTTPS URLs without user information, blocks non-public DNS results during dialing, and does not follow redirects. SSRF defenses should still be reviewed and extended as needed.
-- There is no authentication, authorization, readiness endpoint, metrics, or incident/notification subsystem.
+- There is no authentication, authorization, readiness endpoint, metrics, incident API, uptime calculation, or notification subsystem. Check persistence and incident transitions are separate operations rather than one transaction, so a transition failure can leave incident state that does not reflect the latest persisted check until a later check transitions it.

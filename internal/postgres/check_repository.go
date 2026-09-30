@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gabipuzon/horus/internal/check"
+	"github.com/gabipuzon/horus/internal/incident"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -63,6 +64,46 @@ func (r *CheckRepository) Create(
 		record.CheckedAt,
 	)
 
+	return err
+}
+
+func (r *CheckRepository) OpenIncident(
+	ctx context.Context,
+	value incident.Incident,
+) error {
+	_, err := r.db.Exec(
+		ctx,
+		`
+		INSERT INTO incidents (
+			id,
+			monitor_id,
+			started_at,
+			failure_type,
+			status_code,
+			failure_message
+		)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (monitor_id) WHERE resolved_at IS NULL DO NOTHING
+		`,
+		uuid.NewString(),
+		value.MonitorID,
+		value.StartedAt,
+		value.FailureType,
+		value.StatusCode,
+		value.FailureMessage,
+	)
+	return err
+}
+
+func (r *CheckRepository) ResolveIncident(
+	ctx context.Context,
+	monitorID string,
+) error {
+	_, err := r.db.Exec(
+		ctx,
+		`UPDATE incidents SET resolved_at = NOW() WHERE monitor_id = $1 AND resolved_at IS NULL`,
+		monitorID,
+	)
 	return err
 }
 

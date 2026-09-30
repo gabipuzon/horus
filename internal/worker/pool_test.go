@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gabipuzon/horus/internal/check"
+	"github.com/gabipuzon/horus/internal/incident"
 	"github.com/gabipuzon/horus/internal/monitor"
 	"github.com/gabipuzon/horus/internal/queue"
 )
@@ -30,6 +31,14 @@ func (f *fakeWorkerCheckRepository) Create(
 	default:
 	}
 
+	return nil
+}
+
+func (f *fakeWorkerCheckRepository) OpenIncident(context.Context, incident.Incident) error {
+	return nil
+}
+
+func (f *fakeWorkerCheckRepository) ResolveIncident(context.Context, string) error {
 	return nil
 }
 
