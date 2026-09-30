@@ -3,16 +3,124 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gabipuzon/horus/internal/config"
+	"github.com/gabipuzon/horus/internal/database"
 	"github.com/gabipuzon/horus/internal/notification"
+	"github.com/gabipuzon/horus/internal/queue"
 )
+
+type testPinger struct {
+	err   error
+	calls int
+	wait  bool
+}
+
+func (p *testPinger) Ping(ctx context.Context) error {
+	p.calls++
+	if p.wait {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	return p.err
+}
+
+func TestHealthHandler(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	healthHandler(recorder, httptest.NewRequest(http.MethodGet, "/health", nil))
+	if recorder.Code != http.StatusOK || recorder.Body.String() != "{\"status\":\"ok\"}\n" {
+		t.Fatalf("unexpected liveness response: %d %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestReadyHandlerDependencyStates(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		postgresErr error
+		redisErr    error
+		wantStatus  int
+		wantBody    string
+	}{
+		{"both ready", nil, nil, http.StatusOK, "ready"},
+		{"postgres unavailable", errors.New("postgres password=secret"), nil, http.StatusServiceUnavailable, "not_ready"},
+		{"redis unavailable", nil, errors.New("redis token=secret"), http.StatusServiceUnavailable, "not_ready"},
+		{"both unavailable", errors.New("postgres password=secret"), errors.New("redis token=secret"), http.StatusServiceUnavailable, "not_ready"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			postgres := &testPinger{err: test.postgresErr}
+			redis := &testPinger{err: test.redisErr}
+			recorder := httptest.NewRecorder()
+			readyHandler(postgres, redis)(recorder, httptest.NewRequest(http.MethodGet, "/ready", nil))
+			if recorder.Code != test.wantStatus {
+				t.Fatalf("expected HTTP %d, got %d", test.wantStatus, recorder.Code)
+			}
+			if recorder.Header().Get("Content-Type") != "application/json" {
+				t.Fatalf("unexpected content type: %s", recorder.Header().Get("Content-Type"))
+			}
+			var body healthResponse
+			if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil || body.Status != test.wantBody {
+				t.Fatalf("unexpected readiness response: %s", recorder.Body.String())
+			}
+			if strings.Contains(recorder.Body.String(), "secret") {
+				t.Fatal("readiness response leaked dependency error")
+			}
+			if postgres.calls != 1 || redis.calls != 1 {
+				t.Fatalf("expected one check per dependency, got postgres=%d redis=%d", postgres.calls, redis.calls)
+			}
+		})
+	}
+}
+
+func TestReadyHandlerTimeout(t *testing.T) {
+	postgres := &testPinger{wait: true}
+	redis := &testPinger{}
+	recorder := httptest.NewRecorder()
+	start := time.Now()
+	readyHandler(postgres, redis)(recorder, httptest.NewRequest(http.MethodGet, "/ready", nil))
+	if recorder.Code != http.StatusServiceUnavailable || time.Since(start) > 2*time.Second {
+		t.Fatalf("expected bounded HTTP 503, got %d after %s", recorder.Code, time.Since(start))
+	}
+}
+
+func TestReadyHandlerWithLocalDependencies(t *testing.T) {
+	ctx := context.Background()
+	postgres, err := database.NewPool(ctx, database.Config{
+		Host: "localhost", Port: "5432", User: "horus", Password: "horus", Name: "horus",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer postgres.Close()
+	redis := queue.NewRedis(queue.Config{Host: "localhost", Port: "6379"})
+	defer redis.Close()
+	recorder := httptest.NewRecorder()
+	readyHandler(postgres, redis)(recorder, httptest.NewRequest(http.MethodGet, "/ready", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected local dependencies to be ready, got %d", recorder.Code)
+	}
+	if err := redis.Close(); err != nil {
+		t.Fatal(err)
+	}
+	recorder = httptest.NewRecorder()
+	readyHandler(postgres, redis)(recorder, httptest.NewRequest(http.MethodGet, "/ready", nil))
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected closed Redis client to make readiness fail, got %d", recorder.Code)
+	}
+	recorder = httptest.NewRecorder()
+	healthHandler(recorder, httptest.NewRequest(http.MethodGet, "/health", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected liveness after Redis failure, got %d", recorder.Code)
+	}
+}
 
 func TestNotifierWiringFromEnvironment(t *testing.T) {
 	var requests atomic.Int32

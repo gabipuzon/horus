@@ -25,6 +25,12 @@ type healthResponse struct {
 	Status string `json:"status"`
 }
 
+type dependencyPinger interface {
+	Ping(ctx context.Context) error
+}
+
+const readinessTimeout = time.Second
+
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -39,6 +45,28 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 			http.StatusInternalServerError,
 		)
 		return
+	}
+}
+
+func readyHandler(postgres, redis dependencyPinger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), readinessTimeout)
+		defer cancel()
+
+		postgresErr := postgres.Ping(ctx)
+		redisErr := redis.Ping(ctx)
+		status := http.StatusOK
+		response := healthResponse{Status: "ready"}
+		if postgresErr != nil || redisErr != nil || ctx.Err() != nil {
+			status = http.StatusServiceUnavailable
+			response.Status = "not_ready"
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			log.Printf("failed to encode readiness response: %v", err)
+		}
 	}
 }
 
@@ -127,6 +155,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /health", healthHandler)
+	mux.HandleFunc("GET /ready", readyHandler(db, redis))
 	mux.HandleFunc("POST /monitors", monitorHandler.Create)
 	mux.HandleFunc("GET /monitors", monitorHandler.List)
 	mux.HandleFunc("GET /monitors/{id}", monitorHandler.GetByID)
