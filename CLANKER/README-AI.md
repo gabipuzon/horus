@@ -28,4 +28,6 @@ Configuration comes from the process environment; the Go binaries do not load `.
 
 One GitHub Actions CI workflow runs on pushes to `main` and pull requests targeting it. It starts PostgreSQL and Redis services, applies migrations with `cmd/migrate`, then runs tests (including the race detector), vet, Go build, and Docker build. CI uses local credentials and no Discord webhook or repository secrets.
 
+Monitor creation now rejects malformed or unknown JSON fields, trailing data, blank names, invalid HTTP/HTTPS URL forms, nonpositive intervals/timeouts, values too large for stored seconds, and invalid expected status codes. Monitor GET, DELETE, enable, and disable return `404` for missing or malformed UUIDs. Successful create remains `201`, reads return `200`, and delete/enable/disable return `204`.
+
 Check history uses strict `limit` (default 50, range 1–100) and `offset` (default 0, nonnegative) parsing; invalid values return `400`. Existing monitors with no checks return `[]`. Check history and summary return `404` for missing or malformed UUIDs. History is newest first, with check ID breaking equal timestamps. Summary averages persisted latency in whole milliseconds and reports the newest check's HTTP status (0 if none); with no checks it returns zero fields and null uptime.

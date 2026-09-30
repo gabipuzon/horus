@@ -180,6 +180,13 @@ The response contains the monitor ID:
 }
 ```
 
+Creation returns `201 Created`. The request must be one JSON object with only the
+documented fields; malformed JSON, unknown fields, and trailing data return `400`.
+Name must not be blank. URL must be an absolute HTTP or HTTPS URL without embedded
+credentials. Interval and timeout must be positive whole seconds that fit the
+PostgreSQL integer columns; expected status must be 100–599. URL DNS/IP checks
+still happen when a check runs, not during creation.
+
 Horus will then check the URL every 10 seconds.
 
 ## Viewing Check History
@@ -271,12 +278,12 @@ Horus records the result as an HTTP failure:
 | -------- | ------------------------ | ----------------- |
 | `GET`    | `/health`                | Process liveness check |
 | `GET`    | `/ready`                 | PostgreSQL and Redis readiness check |
-| `POST`   | `/monitors`              | Create a monitor  |
-| `GET`    | `/monitors`              | List monitors     |
-| `GET`    | `/monitors/{id}`         | Get a monitor     |
-| `DELETE` | `/monitors/{id}`         | Delete a monitor  |
-| `PATCH`  | `/monitors/{id}/enable`  | Enable a monitor  |
-| `PATCH`  | `/monitors/{id}/disable` | Disable a monitor |
+| `POST`   | `/monitors`              | Create a monitor (`201`; invalid request `400`) |
+| `GET`    | `/monitors`              | List monitors (`200`) |
+| `GET`    | `/monitors/{id}`         | Get a monitor (`200`; missing or malformed ID `404`) |
+| `DELETE` | `/monitors/{id}`         | Delete a monitor (`204`; missing or malformed ID `404`) |
+| `PATCH`  | `/monitors/{id}/enable`  | Enable a monitor (`204`; missing or malformed ID `404`) |
+| `PATCH`  | `/monitors/{id}/disable` | Disable a monitor (`204`; missing or malformed ID `404`) |
 | `GET`    | `/monitors/{id}/checks`  | Get check history |
 | `GET`    | `/monitors/{id}/summary` | Get check summary |
 

@@ -10,9 +10,9 @@ The code is organized by responsibility: `api`, `check`, `config`, `database`, `
 
 ### Monitor API and persistence
 
-- Monitor model with UUID IDs and validation for required name/URL, positive interval/timeout, and HTTP status range.
+- Monitor model with UUID IDs and validation for nonblank name, absolute HTTP/HTTPS URL without credentials, positive interval/timeout, and HTTP status range. Creation rejects values too large for the existing integer-seconds columns.
 - PostgreSQL monitor repository and migrations for monitor state, including `next_check_at`.
-- Create, list, retrieve, delete, enable, and disable monitor endpoints.
+- Create, list, retrieve, delete, enable, and disable monitor endpoints. Create strictly decodes one JSON object and rejects unknown fields or trailing data. Missing or malformed UUIDs return `404` for GET, DELETE, enable, and disable; successful delete/enable/disable return `204`. Repository mutations use affected-row counts to distinguish missing monitors from database failures.
 
 ### Checks and history
 
@@ -82,7 +82,6 @@ GET    /monitors/{id}/incidents/current
 - No check execution retries, duplicate-job protection, or queue recovery/dead-letter handling. Scheduling errors are retried on the next tick, and workers back off after dequeue errors. If enqueue succeeds but updating `next_check_at` fails, a later tick can enqueue the same monitor again.
 - No metrics, structured logging, or production secret management. `/ready` checks dependency connectivity, not migration state, scheduler progress, worker activity, or queue delivery.
 - PostgreSQL/Redis addresses and credentials, HTTP listen address, worker count, and optional Discord webhook are configurable through `HORUS_DB_HOST`, `HORUS_DB_PORT`, `HORUS_DB_USER`, `HORUS_DB_PASSWORD`, `HORUS_DB_NAME`, `HORUS_REDIS_HOST`, `HORUS_REDIS_PORT`, `HORUS_HTTP_ADDR`, `HORUS_WORKER_COUNT`, and `HORUS_DISCORD_WEBHOOK_URL`. Local Compose-compatible defaults are used when unset. Legacy schemas created manually before `schema_migrations` need an explicit baseline or fresh volume; migrations are not inferred from existing tables.
-- Monitor enable/disable and delete handlers do not distinguish a missing ID from a successful update/delete.
 - Checker uses `http.DefaultClient`; status mismatch is checked against one exact expected status.
 - Offset-based check history pages can shift when new checks arrive between requests.
 
@@ -98,8 +97,10 @@ For containerization and migrations, integration tests covered fresh, repeated, 
 
 For CI, the local migration command applied four versions on an isolated fresh PostgreSQL service and zero on a repeated run. `go test ./...`, `go test -race ./...`, `go vet ./...`, `go build ./...`, `git diff --check`, and `docker build .` passed with local services. The Redis queue race test passed three consecutive runs after moving its jobs to DB 14. The GitHub-hosted workflow has not yet been run.
 
+For Phase 8A, monitor API and domain tests cover strict creation input, URL and numeric validation, safe missing and database-error responses, and all monitor mutation status codes. PostgreSQL integration tests verify affected-row behavior and distinguish missing monitors from database failures. `go test ./internal/api/...`, `go test ./internal/postgres/...`, `go test ./...`, `go test -race ./...`, `go vet ./...`, `go build ./...`, and `git diff --check` passed with local services.
+
 For Phase 8B, API tests cover strict pagination, empty history and summary responses, missing and malformed monitor IDs, and safe repository errors. PostgreSQL integration tests cover empty, successful, failed, and mixed check sets; pagination and timestamp ties; nullable failure fields; latest status; and integer-millisecond average latency. `go test ./internal/api/...`, `go test ./internal/postgres/...`, `go test ./...`, `go test -race ./...`, `go vet ./...`, `go build ./...`, and `git diff --check` passed with local services.
 
 ## Next work
 
-Phase 8B check history/summary semantics are implemented. Phase 8C incident API polish is next. Authentication/authorization, queue recovery, telemetry, and durable notification delivery remain future work.
+Phase 8A monitor API semantics and Phase 8B check history/summary semantics are implemented. Phase 8C incident API polish is next. Authentication/authorization, queue recovery, telemetry, and durable notification delivery remain future work.

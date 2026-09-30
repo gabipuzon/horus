@@ -47,7 +47,7 @@ The domain packages do not import PostgreSQL. Repository implementations in `int
 
 ### Monitor requests
 
-The API decodes and validates monitor creation through `monitor.New`, then calls the monitor repository. The repository owns SQL access. Listing and retrieval map persisted models to API response structs. Enable/disable update state; delete removes a monitor and the checks migration's foreign key cascades to its check history.
+The API strictly decodes one monitor-creation JSON value, rejects unknown fields and trailing data, and validates name, URL syntax, positive interval/timeout, stored-seconds range, and expected status through the request and `monitor.New`. URL DNS/IP safety remains a checker-time concern. The repository owns SQL access. Listing and retrieval map persisted models to API response structs. GET, DELETE, enable, and disable return `404` for missing or malformed UUIDs; other database failures return safe `500` responses. The repository maps no-row lookups and zero affected mutation rows to `monitor.ErrNotFound`, without a pre-mutation lookup. Enable/disable update state and return `204`; delete returns `204` and removes a monitor, with check history cascading through the existing foreign key.
 
 ### Scheduling and checks
 

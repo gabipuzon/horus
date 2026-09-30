@@ -11,6 +11,7 @@ Horus is a self-hosted uptime monitoring service written in Go. It stores HTTP m
 - Create, list, retrieve, enable, disable, and delete monitors.
 - Configure URL, check interval, request timeout, and one expected HTTP status code.
 - Persist monitor state and scheduling time in PostgreSQL.
+- Reject invalid monitor creation JSON and URL forms; distinguish missing monitor IDs from successful GET, delete, enable, and disable operations.
 
 ### Health checks and history
 
