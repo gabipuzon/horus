@@ -4,7 +4,7 @@
 
 Horus has an end-to-end core monitoring flow: manage monitors over HTTP, schedule due checks, enqueue jobs in Redis, execute checks with a bounded worker pool, persist checks and incidents in PostgreSQL, and query check and incident data through the API.
 
-The code is organized by responsibility: `api`, `check`, `config`, `database`, `incident`, `monitor`, `notification`, `postgres`, `queue`, `scheduler`, and `worker` packages under `internal/`.
+The code is organized by responsibility: `api`, `check`, `config`, `database`, `incident`, `migrate`, `monitor`, `notification`, `postgres`, `queue`, `scheduler`, and `worker` packages under `internal/`.
 
 ## Implemented
 
@@ -26,7 +26,7 @@ The code is organized by responsibility: `api`, `check`, `config`, `database`, `
 - PostgreSQL incidents are associated with monitors and store outage start, optional resolution, and the initial failure type, status code, and error message.
 - At most one open incident per monitor is enforced by a partial unique index. Repeated failures leave the existing incident and its initial failure context unchanged; a successful check resolves it.
 - Check results are persisted before incident transitions. If a transition fails, the check remains stored and the check service returns an explicit transition error.
-- Migration `004_create_incidents.sql` adds incident storage and indexes. Migrations remain manual.
+- Migration `004_create_incidents.sql` adds incident storage and indexes. `cmd/migrate` now applies numbered SQL migrations transactionally and records completed versions in `schema_migrations`.
 - Incident history is paginated newest first. The current incident endpoint returns the open incident or `204` when none is open. Responses include timestamps, open state, initial failure context, and elapsed or resolved duration in milliseconds.
 
 ### Discord notifications
@@ -47,7 +47,9 @@ The code is organized by responsibility: `api`, `check`, `config`, `database`, `
 ### Runtime/API
 
 - `GET /health` is process liveness and returns `{"status":"ok"}` without checking dependencies. `GET /ready` pings the existing PostgreSQL pool and Redis client with a shared one-second deadline, returning `200 {"status":"ready"}` when both respond or `503 {"status":"not_ready"}` otherwise. Responses contain no raw dependency errors.
-- PostgreSQL 17 and Redis 8 are available through `compose.yaml`.
+- A multi-stage Dockerfile builds the server and migration binaries; the runtime image uses CA certificates and a non-root user.
+- Compose starts PostgreSQL 17 and Redis 8 with healthchecks, runs migrations after PostgreSQL becomes healthy, then starts Horus after Redis is healthy and migrations succeed. Horus container health uses `/ready`.
+- Compose keeps PostgreSQL data in the `postgres_data` named volume. It reads local `.env` for variable substitution and sets `postgres`/`redis` service hostnames inside containers; the Go binaries still read only process environment variables.
 
 ## Routes
 
@@ -72,8 +74,8 @@ GET    /monitors/{id}/incidents/current
 - No user accounts, authentication, authorization, or monitor ownership.
 - The checker accepts only absolute HTTP/HTTPS URLs without embedded credentials, rejects non-public DNS results at connection time, and does not follow redirects. Other SSRF edge cases should continue to be reviewed as the service is hardened.
 - No check execution retries, duplicate-job protection, or queue recovery/dead-letter handling. Scheduling errors are retried on the next tick, and workers back off after dequeue errors. If enqueue succeeds but updating `next_check_at` fails, a later tick can enqueue the same monitor again.
-- No metrics, structured logging, production configuration, or container image for Horus. `/ready` checks dependency connectivity, not migration state, scheduler progress, worker activity, or queue delivery.
-- PostgreSQL/Redis addresses and credentials, HTTP listen address, worker count, and optional Discord webhook are configurable through `HORUS_DB_HOST`, `HORUS_DB_PORT`, `HORUS_DB_USER`, `HORUS_DB_PASSWORD`, `HORUS_DB_NAME`, `HORUS_REDIS_HOST`, `HORUS_REDIS_PORT`, `HORUS_HTTP_ADDR`, `HORUS_WORKER_COUNT`, and `HORUS_DISCORD_WEBHOOK_URL`. Local Compose-compatible defaults are used when unset; migrations must still be applied manually.
+- No metrics, structured logging, or production secret management. `/ready` checks dependency connectivity, not migration state, scheduler progress, worker activity, or queue delivery.
+- PostgreSQL/Redis addresses and credentials, HTTP listen address, worker count, and optional Discord webhook are configurable through `HORUS_DB_HOST`, `HORUS_DB_PORT`, `HORUS_DB_USER`, `HORUS_DB_PASSWORD`, `HORUS_DB_NAME`, `HORUS_REDIS_HOST`, `HORUS_REDIS_PORT`, `HORUS_HTTP_ADDR`, `HORUS_WORKER_COUNT`, and `HORUS_DISCORD_WEBHOOK_URL`. Local Compose-compatible defaults are used when unset. Legacy schemas created manually before `schema_migrations` need an explicit baseline or fresh volume; migrations are not inferred from existing tables.
 - Monitor enable/disable and delete handlers do not distinguish a missing ID from a successful update/delete.
 - Checker uses `http.DefaultClient`; status mismatch is checked against one exact expected status.
 
@@ -85,6 +87,8 @@ Discord configuration investigation confirmed that the running process lacked `H
 
 For liveness and readiness, focused server and Redis tests, `go test ./...`, `go vet ./...`, `go build ./...`, and `git diff --check` passed with local PostgreSQL and Redis. Tests cover all dependency success/failure combinations, safe 503 responses, liveness after Redis failure, a one-second handler deadline, and a Redis client ping against a stalled TCP listener.
 
+For containerization and migrations, integration tests covered fresh, repeated, partial, and failing migrations. `go test ./...`, `go vet ./...`, `go build ./...`, `git diff --check`, and `docker compose build` passed. An isolated fresh Compose project applied four migrations, reached healthy PostgreSQL/Redis/Horus states, and persisted successful HTTPS checks for a created monitor. `docker compose stop horus` exited cleanly with code 0. After `docker compose down` and `up`, the migration job applied zero versions and the monitor remained available.
+
 ## Next work
 
-Continue production hardening with authentication/authorization, queue recovery, and operational telemetry. Durable notification delivery remains future work.
+Phase 7 is CI. Authentication/authorization, queue recovery, telemetry, and durable notification delivery remain future work.

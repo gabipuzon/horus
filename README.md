@@ -50,7 +50,8 @@ It periodically checks configured URLs, records the results in PostgreSQL, and e
 * Check history summaries
 * Concurrent check workers
 * Graceful application shutdown
-* PostgreSQL persistence
+* PostgreSQL persistence and forward-only schema migrations
+* Docker Compose startup for PostgreSQL, Redis, migrations, and Horus
 
 ## Tech Stack
 
@@ -62,41 +63,64 @@ It periodically checks configured URLs, records the results in PostgreSQL, and e
 
 ## Requirements
 
-* Go
-* Docker
-* Docker Compose
+* Docker and Docker Compose for the preferred quick start
+* Go for running the process directly
 
-## Running Locally
+## Quick start with Docker Compose
 
-Start PostgreSQL:
+Copy the safe local defaults, then build and start the stack:
 
 ```bash
-docker compose up -d
+cp .env.example .env
+docker compose up --build
 ```
 
-Run the tests:
+Compose starts PostgreSQL and Redis, waits for both to be healthy, applies pending
+SQL migrations, then starts Horus. The migration job records completed versions in
+`schema_migrations`; later starts skip them. A failed migration prevents Horus from
+starting. PostgreSQL data lives in the named `postgres_data` volume and survives
+normal restarts. Open `http://localhost:8080` for the API. `GET /health` checks
+process liveness; `GET /ready` checks PostgreSQL and Redis connectivity.
+Databases initialized manually before `schema_migrations` need an explicit
+migration baseline; the command does not infer completed versions from tables.
+
+Set `HORUS_DISCORD_WEBHOOK_URL` in `.env` to enable optional incident notifications.
+Leave it blank to disable them. `.env` is read by Compose; it is not copied into
+the image. Compose sets database and Redis hosts to `postgres` and `redis` inside
+containers. The example's `localhost` values are for direct Go runs. Host ports
+can be changed with `HORUS_HTTP_PUBLISH_PORT`, `HORUS_DB_PUBLISH_PORT`, and
+`HORUS_REDIS_PUBLISH_PORT`.
+
+Stop containers with `Ctrl+C` or `docker compose down`. To intentionally delete
+local PostgreSQL and Redis data as well, run `docker compose down -v`.
+
+## Run Go directly during development
+
+Start the dependencies, export local settings, then migrate and start the server:
+
+```bash
+docker compose up -d postgres redis
+cp .env.example .env
+set -a
+. ./.env
+set +a
+go run ./cmd/migrate
+go run ./cmd/server
+```
+
+`cmd/migrate` is safe to run again: it applies only unrecorded SQL migrations.
+Horus itself does not load `.env`; export it as shown or set `HORUS_*` variables
+through your process environment. Run tests with:
 
 ```bash
 go test ./...
 ```
 
-Start Horus:
-
-```bash
-go run ./cmd/server
-```
-
-The API will be available at:
-
-```text
-http://localhost:8080
-```
-
 ### Optional Discord notifications
 
-Horus reads the process environment; it does not automatically load `.env`.
-To use a local `.env`, create it from `.env.example` if needed, set
-`HORUS_DISCORD_WEBHOOK_URL`, and start Horus with its values exported:
+For a direct Go run, Horus reads the process environment; it does not
+automatically load `.env`. After setting `HORUS_DISCORD_WEBHOOK_URL` in `.env`,
+export its values before starting Horus:
 
 ```bash
 (
@@ -237,18 +261,24 @@ Horus records the result as an HTTP failure:
 ```text
 horus/
 ├── cmd/
+│   ├── migrate/
 │   └── server/
-│       └── main.go
 ├── internal/
 │   ├── api/
 │   ├── check/
+│   ├── config/
 │   ├── database/
+│   ├── incident/
+│   ├── migrate/
 │   ├── monitor/
+│   ├── notification/
 │   ├── postgres/
+│   ├── queue/
 │   ├── queue/
 │   ├── scheduler/
 │   └── worker/
 ├── migrations/
+├── Dockerfile
 ├── compose.yaml
 ├── go.mod
 └── README.md

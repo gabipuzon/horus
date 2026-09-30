@@ -20,23 +20,25 @@ PostgreSQL monitors ──> 1s scheduler ──> Redis list `horus:checks`
                                       optional Discord webhook
 ```
 
-Startup and wiring live in `cmd/server/main.go`; environment parsing and validation live in `internal/config`. PostgreSQL, Redis, HTTP listen address, and worker count use `HORUS_*` variables with local Compose-compatible defaults. The process checks PostgreSQL and Redis at startup. `compose.yaml` provides PostgreSQL 17 and Redis 8 for local development.
+Startup and wiring live in `cmd/server/main.go`; environment parsing and validation live in `internal/config`. PostgreSQL, Redis, HTTP listen address, and worker count use `HORUS_*` variables with local Compose-compatible defaults. The process checks PostgreSQL and Redis at startup. `compose.yaml` provides PostgreSQL 17, Redis 8, a one-shot migration job, and the Horus server. Compose waits for PostgreSQL and Redis health and successful migrations before starting Horus. Its Horus healthcheck calls `/ready`.
 
 ## Packages
 
 ```text
 cmd/server/        process startup, dependency wiring, routes, liveness and readiness handlers
+cmd/migrate/       apply pending PostgreSQL schema migrations, then exit
 internal/api/      monitor, check, and incident HTTP handlers / JSON contracts
 internal/check/    check result types, HTTP checker, check service and incident transitions
 internal/incident/ incident domain model and failure context
 internal/database/ PostgreSQL connection pool construction
 internal/monitor/  monitor domain model and validation
+internal/migrate/  ordered, transactional migration runner
 internal/notification/ optional Discord webhook transport
 internal/postgres/ PostgreSQL monitor, check, and incident repositories
 internal/queue/    Redis list client and check job payload
 internal/scheduler/ due-monitor scheduling
 internal/worker/   bounded check worker pool
-migrations/        SQL schema migrations
+migrations/        SQL schema migrations embedded in the migration binary
 ```
 
 The domain packages do not import PostgreSQL. Repository implementations in `internal/postgres` depend on the domain packages and `pgxpool`.
@@ -67,7 +69,7 @@ Interrupt and SIGTERM cancel the root context. Workers are cancelled and joined,
 
 ## Persistence
 
-Migrations are plain SQL files and are not applied automatically by startup. Apply `001_create_monitors.sql`, `002_create_checks.sql`, `003_add_monitor_next_check_at.sql`, then `004_create_incidents.sql` in order.
+Migrations remain numbered SQL files under `migrations/`, embedded in `cmd/migrate`. The executable creates `schema_migrations`, applies pending versions in numeric order, and records each version in the same PostgreSQL transaction as its SQL. A failed migration rolls back and exits nonzero. The server does not apply migrations itself; Compose runs the migration job after PostgreSQL is healthy and gates server startup on its successful exit. Repeated runs skip recorded versions. PostgreSQL's `postgres_data` named volume survives `docker compose down` and later starts. A preexisting manually migrated database without `schema_migrations` needs an explicit baseline or a fresh volume; the runner does not infer past versions.
 
 `monitors` stores UUID, name, URL, interval/timeout in seconds, expected status, enabled flag, timestamps, and (after migration 003) `next_check_at`. `checks` stores UUID, monitor foreign key with cascade delete, nullable status code, latency in milliseconds, success, failure type, nullable error, and check timestamp. An index supports per-monitor history ordered by recent check time. `incidents` stores outage start, optional resolution, and initial failure context. A partial unique index permits only one unresolved incident per monitor.
 
