@@ -51,10 +51,10 @@ GET    /monitors/{id}/summary
 
 - No incident lifecycle, outage/recovery state, or notifications.
 - No user accounts, authentication, authorization, or monitor ownership.
-- No SSRF protections, URL scheme restriction, private-network/metadata blocking, or redirect validation.
+- The checker accepts only absolute HTTP/HTTPS URLs without embedded credentials, rejects non-public DNS results at connection time, and does not follow redirects. Other SSRF edge cases should continue to be reviewed as the service is hardened.
 - No retries/backoff, duplicate-job protection, queue recovery/dead-letter handling, or configurable worker count.
 - No readiness endpoint, metrics, structured logging, production configuration, or container image for Horus.
-- PostgreSQL/Redis addresses and credentials are hardcoded in `cmd/server/main.go`; migrations must be applied manually.
+- PostgreSQL/Redis addresses and credentials, HTTP listen address, and worker count are configurable through `HORUS_DB_HOST`, `HORUS_DB_PORT`, `HORUS_DB_USER`, `HORUS_DB_PASSWORD`, `HORUS_DB_NAME`, `HORUS_REDIS_HOST`, `HORUS_REDIS_PORT`, `HORUS_HTTP_ADDR`, and `HORUS_WORKER_COUNT`. Local Compose-compatible defaults are used when unset; migrations must still be applied manually.
 - Monitor enable/disable and delete handlers do not distinguish a missing ID from a successful update/delete.
 - Checker uses `http.DefaultClient`; status mismatch is checked against one exact expected status.
 
@@ -64,4 +64,4 @@ The repository includes unit/API tests and PostgreSQL/Redis-backed repository an
 
 ## Next work
 
-Choose the next implementation step from product priorities. Security around user-controlled target URLs and configurable runtime settings are important gaps before exposing the service beyond a trusted local environment. Incidents and notifications remain future product capabilities.
+Continue production hardening with authentication/authorization, queue recovery, readiness and operational telemetry. Incidents and notifications remain future product capabilities.

@@ -39,7 +39,7 @@ Handlers decode and validate request-level input, call repository/application be
 
 ## Security status
 
-Monitor URLs are user-controlled, but current validation only checks that a URL string is present. Scheme restrictions, SSRF/private-network protection, redirect validation, authentication, authorization, request limits, and rate limiting are not implemented. Treat these as known gaps when extending the service; do not document them as existing guarantees.
+Monitor URLs are user-controlled. The checker currently restricts schemes to HTTP/HTTPS, blocks non-public DNS results at connection time, and refuses redirects. Authentication, authorization, request limits, rate limiting, and complete SSRF protection are not implemented. Treat these as known gaps when extending the service; do not document them as existing guarantees.
 
 ## Change discipline
 

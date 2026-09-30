@@ -43,7 +43,7 @@ Monitor JSON fields are `id`, `name`, `url`, `interval_seconds`, `timeout_second
 
 ## Not implemented yet
 
-Incidents and recovery tracking, notifications, authentication/ownership, uptime percentages, retries/backoff, configurable worker count, readiness checks, metrics, structured logging, production configuration, and protections against SSRF are future work. The monitor constructor checks that name/URL are nonempty, interval/timeout are positive, and expected status is in the HTTP status range; it does not enforce URL schemes or protect private networks.
+Incidents and recovery tracking, notifications, authentication/ownership, uptime percentages, retries/backoff, readiness checks, metrics, structured logging, production configuration, and complete SSRF defenses are future work. Runtime connection/listen settings and worker count can be set through environment variables. The monitor constructor checks that name/URL are nonempty, interval/timeout are positive, and expected status is in the HTTP status range; URL safety checks run in the checker before dialing.
 
 ## Principles and non-goals
 

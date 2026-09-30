@@ -16,7 +16,7 @@ PostgreSQL monitors ──> 1s scheduler ──> Redis list `horus:checks`
                                       check result ──> PostgreSQL
 ```
 
-Startup and wiring live in `cmd/server/main.go`. The process expects PostgreSQL on `localhost:5432` and Redis on `localhost:6379`; it checks both at startup. The HTTP server listens on `:8080`. These addresses and credentials are currently hardcoded. `compose.yaml` provides PostgreSQL 17 and Redis 8 for local development.
+Startup and wiring live in `cmd/server/main.go`; environment parsing and validation live in `internal/config`. PostgreSQL, Redis, HTTP listen address, and worker count use `HORUS_*` variables with local Compose-compatible defaults. The process checks PostgreSQL and Redis at startup. `compose.yaml` provides PostgreSQL 17 and Redis 8 for local development.
 
 ## Packages
 
@@ -79,6 +79,6 @@ Handlers use small repository interfaces defined at the API boundary. Check hist
 
 - PostgreSQL is the source of truth; Redis is currently a job transport, not a cache or durable business store.
 - The scheduler currently shares one process with API and workers; Redis does not imply independently deployed workers.
-- The worker count is fixed at three and configuration is not environment-driven.
-- The checker uses the default HTTP client and accepts URLs after only nonempty-string validation. Scheme restrictions, private-network/metadata blocking, and redirect validation are not implemented.
+- Worker count and service settings are configurable through environment variables, but there is no production configuration profile or secret management.
+- The checker allows only HTTP/HTTPS URLs without user information, blocks non-public DNS results during dialing, and does not follow redirects. SSRF defenses should still be reviewed and extended as needed.
 - There is no authentication, authorization, readiness endpoint, metrics, or incident/notification subsystem.
