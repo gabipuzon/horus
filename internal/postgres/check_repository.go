@@ -135,15 +135,15 @@ func (r *CheckRepository) ListByMonitor(
         SELECT
             id,
             monitor_id,
-            status_code,
+            COALESCE(status_code, 0),
             latency_ms,
             success,
             failure_type,
-            error,
+            COALESCE(error, ''),
             checked_at
         FROM checks
         WHERE monitor_id = $1
-        ORDER BY checked_at DESC
+        ORDER BY checked_at DESC, id DESC
         LIMIT $2
         OFFSET $3
         `,
@@ -207,7 +207,7 @@ func (r *CheckRepository) GetSummary(
 					SELECT status_code
 					FROM checks
 					WHERE monitor_id = $1
-					ORDER BY checked_at DESC
+					ORDER BY checked_at DESC, id DESC
 					LIMIT 1
 				),
 				0

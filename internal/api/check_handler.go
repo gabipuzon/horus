@@ -102,35 +102,24 @@ func (h *CheckHandler) ListByMonitor(
 
 	limit := 50
 	offset := 0
+	query := r.URL.Query()
 
-	if value := r.URL.Query().Get("limit"); value != "" {
-		if parsed, err := strconv.Atoi(value); err == nil {
-			limit = parsed
+	if query.Has("limit") {
+		parsed, err := strconv.Atoi(query.Get("limit"))
+		if err != nil || parsed < 1 || parsed > 100 {
+			http.Error(w, "limit must be between 1 and 100", http.StatusBadRequest)
+			return
 		}
+		limit = parsed
 	}
 
-	if value := r.URL.Query().Get("offset"); value != "" {
-		if parsed, err := strconv.Atoi(value); err == nil {
-			offset = parsed
+	if query.Has("offset") {
+		parsed, err := strconv.Atoi(query.Get("offset"))
+		if err != nil || parsed < 0 {
+			http.Error(w, "offset must not be negative", http.StatusBadRequest)
+			return
 		}
-	}
-
-	if limit < 1 || limit > 100 {
-		http.Error(
-			w,
-			"limit must be between 1 and 100",
-			http.StatusBadRequest,
-		)
-		return
-	}
-
-	if offset < 0 {
-		http.Error(
-			w,
-			"offset must not be negative",
-			http.StatusBadRequest,
-		)
-		return
+		offset = parsed
 	}
 	if !requireMonitor(w, r, h.monitors) {
 		return
