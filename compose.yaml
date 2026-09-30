@@ -1,25 +1,75 @@
 services:
   postgres:
     image: postgres:17
-    container_name: horus-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: horus
-      POSTGRES_PASSWORD: horus
-      POSTGRES_DB: horus
+      POSTGRES_USER: ${HORUS_DB_USER:-horus}
+      POSTGRES_PASSWORD: ${HORUS_DB_PASSWORD:-horus}
+      POSTGRES_DB: ${HORUS_DB_NAME:-horus}
     ports:
-      - "5432:5432"
+      - "${HORUS_DB_PUBLISH_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   redis:
     image: redis:8
-    container_name: horus-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "${HORUS_REDIS_PUBLISH_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  migrate:
+    image: horus:local
+    build: .
+    entrypoint: ["/usr/local/bin/horus-migrate"]
+    environment: &database-environment
+      HORUS_DB_HOST: postgres
+      HORUS_DB_PORT: "5432"
+      HORUS_DB_USER: ${HORUS_DB_USER:-horus}
+      HORUS_DB_PASSWORD: ${HORUS_DB_PASSWORD:-horus}
+      HORUS_DB_NAME: ${HORUS_DB_NAME:-horus}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  horus:
+    image: horus:local
+    build: .
+    restart: unless-stopped
+    environment:
+      <<: *database-environment
+      HORUS_REDIS_HOST: redis
+      HORUS_REDIS_PORT: "6379"
+      HORUS_HTTP_ADDR: ":8080"
+      HORUS_WORKER_COUNT: ${HORUS_WORKER_COUNT:-3}
+      HORUS_DISCORD_WEBHOOK_URL: ${HORUS_DISCORD_WEBHOOK_URL:-}
+    ports:
+      - "${HORUS_HTTP_PUBLISH_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
 
 volumes:
   postgres_data:
