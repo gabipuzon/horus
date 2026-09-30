@@ -2,10 +2,14 @@ package monitor
 
 import (
 	"errors"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+var ErrNotFound = errors.New("monitor not found")
 
 type Monitor struct {
 	ID             string
@@ -22,17 +26,21 @@ type Monitor struct {
 
 func New(
 	name string,
-	url string,
+	rawURL string,
 	interval time.Duration,
 	timeout time.Duration,
 	expectedStatus int,
 ) (*Monitor, error) {
-	if name == "" {
+	if strings.TrimSpace(name) == "" {
 		return nil, errors.New("monitor name is required")
 	}
 
-	if url == "" {
+	if rawURL == "" {
 		return nil, errors.New("monitor URL is required")
+	}
+	parsedURL, err := url.ParseRequestURI(rawURL)
+	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") || parsedURL.Hostname() == "" || parsedURL.User != nil {
+		return nil, errors.New("monitor URL must be an absolute HTTP or HTTPS URL without credentials")
 	}
 
 	if interval <= 0 {
@@ -52,7 +60,7 @@ func New(
 	return &Monitor{
 		ID:             uuid.NewString(),
 		Name:           name,
-		URL:            url,
+		URL:            rawURL,
 		Interval:       interval,
 		Timeout:        timeout,
 		ExpectedStatus: expectedStatus,

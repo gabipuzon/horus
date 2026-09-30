@@ -149,10 +149,7 @@ func TestSafeDialBlocksPrivateAddresses(t *testing.T) {
 }
 
 func TestCheckerRejectsNonHTTPURL(t *testing.T) {
-	m, err := monitor.New("bad", "file:///etc/passwd", time.Minute, time.Second, http.StatusOK)
-	if err != nil {
-		t.Fatal(err)
-	}
+	m := &monitor.Monitor{URL: "file:///etc/passwd", Timeout: time.Second, ExpectedStatus: http.StatusOK}
 	result := NewChecker(nil).Check(context.Background(), m)
 	if result.Error == nil || result.FailureType != FailureNetwork {
 		t.Fatalf("expected URL validation failure, got %+v", result)

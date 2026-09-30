@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"time"
 
@@ -24,8 +26,8 @@ type MonitorHandler struct {
 type createMonitorRequest struct {
 	Name           string `json:"name"`
 	URL            string `json:"url"`
-	Interval       int    `json:"interval_seconds"`
-	Timeout        int    `json:"timeout_seconds"`
+	Interval       int64  `json:"interval_seconds"`
+	Timeout        int64  `json:"timeout_seconds"`
 	ExpectedStatus int    `json:"expected_status"`
 }
 
@@ -59,9 +61,21 @@ func newMonitorResponse(m *monitor.Monitor) monitorResponse {
 
 func (h *MonitorHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var request createMonitorRequest
-
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	// The schema stores these values as signed 32-bit seconds, and this bound
+	// also keeps the conversion to time.Duration from overflowing.
+	if request.Interval > 1<<31-1 || request.Timeout > 1<<31-1 {
+		http.Error(w, "monitor interval or timeout is too large", http.StatusBadRequest)
 		return
 	}
 
@@ -119,7 +133,7 @@ func (h *MonitorHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 
 	m, err := h.repository.GetByID(r.Context(), id)
 	if err != nil {
-		http.Error(w, "monitor not found", http.StatusNotFound)
+		writeMonitorError(w, err, "failed to get monitor")
 		return
 	}
 
@@ -135,7 +149,7 @@ func (h *MonitorHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
 	if err := h.repository.Delete(r.Context(), id); err != nil {
-		http.Error(w, "failed to delete monitor", http.StatusInternalServerError)
+		writeMonitorError(w, err, "failed to delete monitor")
 		return
 	}
 
@@ -146,7 +160,7 @@ func (h *MonitorHandler) Enable(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
 	if err := h.repository.SetEnabled(r.Context(), id, true); err != nil {
-		http.Error(w, "failed to enable monitor", http.StatusInternalServerError)
+		writeMonitorError(w, err, "failed to enable monitor")
 		return
 	}
 
@@ -157,9 +171,17 @@ func (h *MonitorHandler) Disable(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
 	if err := h.repository.SetEnabled(r.Context(), id, false); err != nil {
-		http.Error(w, "failed to disable monitor", http.StatusInternalServerError)
+		writeMonitorError(w, err, "failed to disable monitor")
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func writeMonitorError(w http.ResponseWriter, err error, internalMessage string) {
+	if errors.Is(err, monitor.ErrNotFound) {
+		http.Error(w, "monitor not found", http.StatusNotFound)
+		return
+	}
+	http.Error(w, internalMessage, http.StatusInternalServerError)
 }

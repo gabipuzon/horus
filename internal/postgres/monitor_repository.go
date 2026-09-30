@@ -2,10 +2,12 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/gabipuzon/horus/internal/monitor"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -130,6 +132,10 @@ func (r *MonitorRepository) GetByID(
 	ctx context.Context,
 	id string,
 ) (*monitor.Monitor, error) {
+	if _, err := uuid.Parse(id); err != nil {
+		return nil, monitor.ErrNotFound
+	}
+
 	var m monitor.Monitor
 	var intervalSeconds int
 	var timeoutSeconds int
@@ -165,6 +171,9 @@ func (r *MonitorRepository) GetByID(
 		&m.NextCheckAt,
 	)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, monitor.ErrNotFound
+		}
 		return nil, err
 	}
 
@@ -178,7 +187,10 @@ func (r *MonitorRepository) Delete(
 	ctx context.Context,
 	id string,
 ) error {
-	_, err := r.db.Exec(
+	if _, err := uuid.Parse(id); err != nil {
+		return monitor.ErrNotFound
+	}
+	tag, err := r.db.Exec(
 		ctx,
 		`
 		DELETE FROM monitors
@@ -187,7 +199,13 @@ func (r *MonitorRepository) Delete(
 		id,
 	)
 
-	return err
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return monitor.ErrNotFound
+	}
+	return nil
 }
 
 func (r *MonitorRepository) SetEnabled(
@@ -195,7 +213,10 @@ func (r *MonitorRepository) SetEnabled(
 	id string,
 	enabled bool,
 ) error {
-	_, err := r.db.Exec(
+	if _, err := uuid.Parse(id); err != nil {
+		return monitor.ErrNotFound
+	}
+	tag, err := r.db.Exec(
 		ctx,
 		`
 		UPDATE monitors
@@ -206,7 +227,13 @@ func (r *MonitorRepository) SetEnabled(
 		id,
 	)
 
-	return err
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return monitor.ErrNotFound
+	}
+	return nil
 }
 
 func (r *MonitorRepository) SetNextCheckAt(

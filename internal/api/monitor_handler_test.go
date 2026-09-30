@@ -11,16 +11,21 @@ import (
 	"time"
 
 	"github.com/gabipuzon/horus/internal/monitor"
+	"github.com/google/uuid"
 )
 
 type fakeMonitorRepository struct {
 	created *monitor.Monitor
+	err     error
 }
 
 func (f *fakeMonitorRepository) Create(
 	ctx context.Context,
 	m *monitor.Monitor,
 ) error {
+	if f.err != nil {
+		return f.err
+	}
 	f.created = m
 	return nil
 }
@@ -145,9 +150,76 @@ func TestCreateMonitorInvalidRequest(t *testing.T) {
 	}
 }
 
+func TestCreateMonitorRejectsInvalidJSON(t *testing.T) {
+	valid := `{"name":"Example","url":"https://example.com","interval_seconds":60,"timeout_seconds":5,"expected_status":200}`
+	for _, test := range []struct {
+		name string
+		body string
+	}{
+		{name: "malformed", body: `{"name":`},
+		{name: "unknown field", body: `{"name":"Example","url":"https://example.com","interval_seconds":60,"timeout_seconds":5,"expected_status":200,"typo_field":true}`},
+		{name: "second value", body: valid + ` true`},
+		{name: "trailing garbage", body: valid + ` trailing`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repository := &fakeMonitorRepository{}
+			recorder := httptest.NewRecorder()
+			NewMonitorHandler(repository).Create(recorder, httptest.NewRequest(http.MethodPost, "/monitors", strings.NewReader(test.body)))
+			if recorder.Code != http.StatusBadRequest || recorder.Body.String() != "invalid request body\n" || repository.created != nil {
+				t.Fatalf("unexpected response or create for %s: %d %s", test.name, recorder.Code, recorder.Body.String())
+			}
+		})
+	}
+}
+
+func TestCreateMonitorRejectsInvalidValues(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		monitorName    string
+		url            string
+		interval       int64
+		timeout        int64
+		expectedStatus int
+	}{
+		{name: "empty name", url: "https://example.com", interval: 60, timeout: 5, expectedStatus: 200},
+		{name: "blank name", monitorName: "  ", url: "https://example.com", interval: 60, timeout: 5, expectedStatus: 200},
+		{name: "empty URL", monitorName: "Example", interval: 60, timeout: 5, expectedStatus: 200},
+		{name: "relative URL", monitorName: "Example", url: "not-a-url", interval: 60, timeout: 5, expectedStatus: 200},
+		{name: "unsupported scheme", monitorName: "Example", url: "ftp://example.com", interval: 60, timeout: 5, expectedStatus: 200},
+		{name: "URL credentials", monitorName: "Example", url: "https://user:password@example.com", interval: 60, timeout: 5, expectedStatus: 200},
+		{name: "zero interval", monitorName: "Example", url: "https://example.com", timeout: 5, expectedStatus: 200},
+		{name: "negative interval", monitorName: "Example", url: "https://example.com", interval: -1, timeout: 5, expectedStatus: 200},
+		{name: "zero timeout", monitorName: "Example", url: "https://example.com", interval: 60, expectedStatus: 200},
+		{name: "negative timeout", monitorName: "Example", url: "https://example.com", interval: 60, timeout: -1, expectedStatus: 200},
+		{name: "interval exceeds storage", monitorName: "Example", url: "https://example.com", interval: 1 << 31, timeout: 5, expectedStatus: 200},
+		{name: "timeout exceeds storage", monitorName: "Example", url: "https://example.com", interval: 60, timeout: 1 << 31, expectedStatus: 200},
+		{name: "low status", monitorName: "Example", url: "https://example.com", interval: 60, timeout: 5, expectedStatus: 99},
+		{name: "high status", monitorName: "Example", url: "https://example.com", interval: 60, timeout: 5, expectedStatus: 600},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			body, err := json.Marshal(createMonitorRequest{
+				Name: test.monitorName, URL: test.url, Interval: test.interval,
+				Timeout: test.timeout, ExpectedStatus: test.expectedStatus,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			repository := &fakeMonitorRepository{}
+			recorder := httptest.NewRecorder()
+			NewMonitorHandler(repository).Create(recorder, httptest.NewRequest(http.MethodPost, "/monitors", strings.NewReader(string(body))))
+			if recorder.Code != http.StatusBadRequest || repository.created != nil {
+				t.Fatalf("unexpected response or create for %s: %d %s", test.name, recorder.Code, recorder.Body.String())
+			}
+		})
+	}
+}
+
 func (f *fakeMonitorRepository) List(
 	ctx context.Context,
 ) ([]*monitor.Monitor, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
 	if f.created == nil {
 		return []*monitor.Monitor{}, nil
 	}
@@ -217,12 +289,15 @@ func (f *fakeMonitorRepository) GetByID(
 	ctx context.Context,
 	id string,
 ) (*monitor.Monitor, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
 	if f.created == nil {
-		return nil, errors.New("monitor not found")
+		return nil, monitor.ErrNotFound
 	}
 
 	if f.created.ID != id {
-		return nil, errors.New("monitor not found")
+		return nil, monitor.ErrNotFound
 	}
 
 	return f.created, nil
@@ -293,14 +368,15 @@ func TestGetMonitorNotFound(t *testing.T) {
 	repository := &fakeMonitorRepository{}
 
 	handler := NewMonitorHandler(repository)
+	id := uuid.NewString()
 
 	request := httptest.NewRequest(
 		http.MethodGet,
-		"/monitors/missing",
+		"/monitors/"+id,
 		nil,
 	)
 
-	request.SetPathValue("id", "missing")
+	request.SetPathValue("id", id)
 
 	recorder := httptest.NewRecorder()
 
@@ -319,12 +395,15 @@ func (f *fakeMonitorRepository) Delete(
 	ctx context.Context,
 	id string,
 ) error {
+	if f.err != nil {
+		return f.err
+	}
 	if f.created == nil {
-		return errors.New("monitor not found")
+		return monitor.ErrNotFound
 	}
 
 	if f.created.ID != id {
-		return errors.New("monitor not found")
+		return monitor.ErrNotFound
 	}
 
 	f.created = nil
@@ -369,6 +448,9 @@ func TestDeleteMonitor(t *testing.T) {
 			recorder.Code,
 		)
 	}
+	if recorder.Body.Len() != 0 {
+		t.Fatalf("expected empty delete response, got %q", recorder.Body.String())
+	}
 
 	if repository.created != nil {
 		t.Fatal("expected monitor to be deleted")
@@ -392,10 +474,10 @@ func TestDeleteMonitorNotFound(t *testing.T) {
 
 	handler.Delete(recorder, request)
 
-	if recorder.Code != http.StatusInternalServerError {
+	if recorder.Code != http.StatusNotFound {
 		t.Fatalf(
 			"expected status %d, got %d",
-			http.StatusInternalServerError,
+			http.StatusNotFound,
 			recorder.Code,
 		)
 	}
@@ -406,12 +488,15 @@ func (f *fakeMonitorRepository) SetEnabled(
 	id string,
 	enabled bool,
 ) error {
+	if f.err != nil {
+		return f.err
+	}
 	if f.created == nil {
-		return errors.New("monitor not found")
+		return monitor.ErrNotFound
 	}
 
 	if f.created.ID != id {
-		return errors.New("monitor not found")
+		return monitor.ErrNotFound
 	}
 
 	f.created.Enabled = enabled
@@ -456,6 +541,9 @@ func TestEnableMonitor(t *testing.T) {
 			recorder.Code,
 		)
 	}
+	if recorder.Body.Len() != 0 {
+		t.Fatalf("expected empty enable response, got %q", recorder.Body.String())
+	}
 
 	if !repository.created.Enabled {
 		t.Fatal("expected monitor to be enabled")
@@ -498,8 +586,87 @@ func TestDisableMonitor(t *testing.T) {
 			recorder.Code,
 		)
 	}
+	if recorder.Body.Len() != 0 {
+		t.Fatalf("expected empty disable response, got %q", recorder.Body.String())
+	}
 
 	if repository.created.Enabled {
 		t.Fatal("expected monitor to be disabled")
+	}
+}
+
+func TestMonitorMutationNotFound(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		verb    string
+		suffix  string
+		handler func(*MonitorHandler, http.ResponseWriter, *http.Request)
+	}{
+		{name: "delete", verb: http.MethodDelete, handler: (*MonitorHandler).Delete},
+		{name: "enable", verb: http.MethodPatch, suffix: "/enable", handler: (*MonitorHandler).Enable},
+		{name: "disable", verb: http.MethodPatch, suffix: "/disable", handler: (*MonitorHandler).Disable},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repository := &fakeMonitorRepository{}
+			id := uuid.NewString()
+			request := httptest.NewRequest(test.verb, "/monitors/"+id+test.suffix, nil)
+			request.SetPathValue("id", id)
+			recorder := httptest.NewRecorder()
+			test.handler(NewMonitorHandler(repository), recorder, request)
+			if recorder.Code != http.StatusNotFound || recorder.Body.String() != "monitor not found\n" {
+				t.Fatalf("expected safe 404, got %d %s", recorder.Code, recorder.Body.String())
+			}
+		})
+	}
+}
+
+func TestMalformedMonitorIDReturnsNotFound(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		verb    string
+		suffix  string
+		handler func(*MonitorHandler, http.ResponseWriter, *http.Request)
+	}{
+		{name: "get", verb: http.MethodGet, handler: (*MonitorHandler).GetByID},
+		{name: "delete", verb: http.MethodDelete, handler: (*MonitorHandler).Delete},
+		{name: "enable", verb: http.MethodPatch, suffix: "/enable", handler: (*MonitorHandler).Enable},
+		{name: "disable", verb: http.MethodPatch, suffix: "/disable", handler: (*MonitorHandler).Disable},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repository := &fakeMonitorRepository{}
+			request := httptest.NewRequest(test.verb, "/monitors/not-a-uuid"+test.suffix, nil)
+			request.SetPathValue("id", "not-a-uuid")
+			recorder := httptest.NewRecorder()
+			test.handler(NewMonitorHandler(repository), recorder, request)
+			if recorder.Code != http.StatusNotFound {
+				t.Fatalf("expected 404, got %d %s", recorder.Code, recorder.Body.String())
+			}
+		})
+	}
+}
+
+func TestMonitorRepositoryErrorsAreSafe(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		verb    string
+		suffix  string
+		handler func(*MonitorHandler, http.ResponseWriter, *http.Request)
+	}{
+		{name: "get", verb: http.MethodGet, handler: (*MonitorHandler).GetByID},
+		{name: "delete", verb: http.MethodDelete, handler: (*MonitorHandler).Delete},
+		{name: "enable", verb: http.MethodPatch, suffix: "/enable", handler: (*MonitorHandler).Enable},
+		{name: "disable", verb: http.MethodPatch, suffix: "/disable", handler: (*MonitorHandler).Disable},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repository := &fakeMonitorRepository{err: errors.New("database password=secret")}
+			id := uuid.NewString()
+			request := httptest.NewRequest(test.verb, "/monitors/"+id+test.suffix, nil)
+			request.SetPathValue("id", id)
+			recorder := httptest.NewRecorder()
+			test.handler(NewMonitorHandler(repository), recorder, request)
+			if recorder.Code != http.StatusInternalServerError || strings.Contains(recorder.Body.String(), "secret") {
+				t.Fatalf("expected safe 500, got %d %s", recorder.Code, recorder.Body.String())
+			}
+		})
 	}
 }
