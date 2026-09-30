@@ -14,6 +14,8 @@ type fakeMonitorSchedulerRepository struct {
 	monitors  []*monitor.Monitor
 	listErr   error
 	listCalls int
+	setErrID  string
+	setErr    error
 }
 
 func (f *fakeMonitorSchedulerRepository) List(
@@ -31,6 +33,9 @@ func (f *fakeMonitorSchedulerRepository) SetNextCheckAt(
 	id string,
 	nextCheckAt time.Time,
 ) error {
+	if id == f.setErrID {
+		return f.setErr
+	}
 	for _, m := range f.monitors {
 		if m.ID == id {
 			m.NextCheckAt = nextCheckAt
@@ -44,6 +49,7 @@ func (f *fakeMonitorSchedulerRepository) SetNextCheckAt(
 type fakeCheckQueue struct {
 	jobs     []queue.CheckJob
 	err      error
+	failID   string
 	enqueued chan queue.CheckJob
 }
 
@@ -51,7 +57,7 @@ func (f *fakeCheckQueue) EnqueueCheck(
 	ctx context.Context,
 	job queue.CheckJob,
 ) error {
-	if f.err != nil {
+	if f.err != nil && (f.failID == "" || f.failID == job.MonitorID) {
 		return f.err
 	}
 
@@ -279,7 +285,7 @@ func TestSchedulerEnqueueFailureLeavesMonitorDue(t *testing.T) {
 	scheduler := New(repository, checkQueue)
 
 	due, err := scheduler.schedule(context.Background())
-	if err != enqueueErr {
+	if !errors.Is(err, enqueueErr) {
 		t.Fatalf("expected enqueue error %v, got %v", enqueueErr, err)
 	}
 	if len(due) != 0 {
@@ -290,5 +296,49 @@ func TestSchedulerEnqueueFailureLeavesMonitorDue(t *testing.T) {
 	}
 	if len(checkQueue.jobs) != 0 {
 		t.Fatalf("expected failed enqueue to add no job, got %d", len(checkQueue.jobs))
+	}
+}
+
+func TestSchedulerContinuesAfterOneMonitorFails(t *testing.T) {
+	for _, stage := range []string{"enqueue", "update"} {
+		t.Run(stage, func(t *testing.T) {
+			first, _ := monitor.New("First", "https://example.com", time.Minute, 5*time.Second, 200)
+			second, _ := monitor.New("Second", "https://example.com", time.Minute, 5*time.Second, 200)
+			first.NextCheckAt = time.Now().Add(-time.Minute)
+			second.NextCheckAt = first.NextCheckAt
+			firstDueAt := first.NextCheckAt
+			secondDueAt := second.NextCheckAt
+			failure := errors.New("temporary failure")
+			repository := &fakeMonitorSchedulerRepository{monitors: []*monitor.Monitor{first, second}}
+			checkQueue := &fakeCheckQueue{}
+			if stage == "enqueue" {
+				checkQueue.err = failure
+				checkQueue.failID = first.ID
+			} else {
+				repository.setErr = failure
+				repository.setErrID = first.ID
+			}
+
+			due, err := New(repository, checkQueue).schedule(context.Background())
+			if !errors.Is(err, failure) {
+				t.Fatalf("expected scheduling failure, got %v", err)
+			}
+			if len(due) != 1 || due[0].ID != second.ID {
+				t.Fatalf("expected later monitor to be scheduled, got %v", due)
+			}
+			if !first.NextCheckAt.Equal(firstDueAt) {
+				t.Fatal("failed monitor's schedule advanced")
+			}
+			if !second.NextCheckAt.After(secondDueAt) {
+				t.Fatal("later monitor's schedule did not advance")
+			}
+			expectedJobs := 1
+			if stage == "update" {
+				expectedJobs = 2
+			}
+			if len(checkQueue.jobs) != expectedJobs || checkQueue.jobs[len(checkQueue.jobs)-1].MonitorID != second.ID {
+				t.Fatalf("expected later monitor job, got %v", checkQueue.jobs)
+			}
+		})
 	}
 }

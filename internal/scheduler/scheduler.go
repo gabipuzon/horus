@@ -2,6 +2,8 @@ package scheduler
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log"
 	"time"
 
@@ -69,8 +71,12 @@ func (s *Scheduler) schedule(ctx context.Context) ([]*monitor.Monitor, error) {
 	now := time.Now()
 
 	var due []*monitor.Monitor
+	var scheduleErr error
 
 	for _, m := range monitors {
+		if err := ctx.Err(); err != nil {
+			return due, err
+		}
 		if !m.Enabled {
 			continue
 		}
@@ -84,7 +90,11 @@ func (s *Scheduler) schedule(ctx context.Context) ([]*monitor.Monitor, error) {
 					MonitorID: m.ID,
 				},
 			); err != nil {
-				return nil, err
+				if ctx.Err() != nil {
+					return due, ctx.Err()
+				}
+				scheduleErr = errors.Join(scheduleErr, fmt.Errorf("enqueue monitor %s: %w", m.ID, err))
+				continue
 			}
 
 			if err := s.repository.SetNextCheckAt(
@@ -92,12 +102,16 @@ func (s *Scheduler) schedule(ctx context.Context) ([]*monitor.Monitor, error) {
 				m.ID,
 				nextCheckAt,
 			); err != nil {
-				return nil, err
+				if ctx.Err() != nil {
+					return due, ctx.Err()
+				}
+				scheduleErr = errors.Join(scheduleErr, fmt.Errorf("advance monitor %s schedule: %w", m.ID, err))
+				continue
 			}
 
 			due = append(due, m)
 		}
 	}
 
-	return due, nil
+	return due, scheduleErr
 }

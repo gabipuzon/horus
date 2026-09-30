@@ -29,7 +29,7 @@ Horus is a self-hosted uptime monitoring service written in Go. It stores HTTP m
 ### Runtime
 
 - Expose a basic `/health` response.
-- Handle interrupt/SIGTERM and shut down workers and the HTTP server.
+- Handle interrupt/SIGTERM and shut down workers and the HTTP server; idle Redis dequeues use a bounded wait so cancellation can complete promptly.
 - Configure optional Discord notifications with `HORUS_DISCORD_WEBHOOK_URL`; Horus starts normally when it is unset.
 
 ## API

@@ -37,10 +37,10 @@ The code is organized by responsibility: `api`, `check`, `config`, `database`, `
 
 ### Scheduling and workers
 
-- One-second scheduler selects enabled monitors whose `next_check_at` is due, queues jobs in Redis list `horus:checks`, then advances their schedule.
-- Redis client provides ping, enqueue (`LPUSH`), and blocking dequeue (`BRPOP`).
+- One-second scheduler selects enabled monitors whose `next_check_at` is due, queues jobs in Redis list `horus:checks`, then advances their schedule. A per-monitor enqueue or schedule-update failure is logged without blocking later monitors in the same pass. Failed enqueues leave the monitor due; update errors are reevaluated from PostgreSQL on the next tick.
+- Redis client provides ping, enqueue (`LPUSH`), and blocking dequeue (`BRPOP`) with a one-second wait so an idle worker can observe cancellation promptly.
 - Application starts three workers in the same process; workers load monitors, run checks, and persist results.
-- Process handles interrupt/SIGTERM, cancels and joins workers, and gracefully shuts down the HTTP server.
+- Process handles interrupt/SIGTERM, cancels and joins workers, and gracefully shuts down the HTTP server. Idle Redis dequeues no longer wait indefinitely before worker shutdown can finish.
 
 ### Runtime/API
 
@@ -68,15 +68,15 @@ GET    /monitors/{id}/incidents/current
 - No durable notification delivery or time-weighted uptime calculation; the reported percentage counts check outcomes.
 - No user accounts, authentication, authorization, or monitor ownership.
 - The checker accepts only absolute HTTP/HTTPS URLs without embedded credentials, rejects non-public DNS results at connection time, and does not follow redirects. Other SSRF edge cases should continue to be reviewed as the service is hardened.
-- No check execution retries, duplicate-job protection, or queue recovery/dead-letter handling. Scheduling errors are retried on the next tick, and workers back off after dequeue errors.
-- No readiness endpoint, metrics, structured logging, production configuration, or container image for Horus.
+- No check execution retries, duplicate-job protection, or queue recovery/dead-letter handling. Scheduling errors are retried on the next tick, and workers back off after dequeue errors. If enqueue succeeds but updating `next_check_at` fails, a later tick can enqueue the same monitor again.
+- No readiness endpoint, metrics, structured logging, production configuration, or container image for Horus. `/health` reports that the HTTP process is serving requests; it does not verify that scheduling, PostgreSQL, or Redis are healthy.
 - PostgreSQL/Redis addresses and credentials, HTTP listen address, worker count, and optional Discord webhook are configurable through `HORUS_DB_HOST`, `HORUS_DB_PORT`, `HORUS_DB_USER`, `HORUS_DB_PASSWORD`, `HORUS_DB_NAME`, `HORUS_REDIS_HOST`, `HORUS_REDIS_PORT`, `HORUS_HTTP_ADDR`, `HORUS_WORKER_COUNT`, and `HORUS_DISCORD_WEBHOOK_URL`. Local Compose-compatible defaults are used when unset; migrations must still be applied manually.
 - Monitor enable/disable and delete handlers do not distinguish a missing ID from a successful update/delete.
 - Checker uses `http.DefaultClient`; status mismatch is checked against one exact expected status.
 
 ## Verification record
 
-The repository includes unit/API tests and PostgreSQL/Redis-backed repository and queue tests. Database tests require reachable local services and applied migrations. For the Discord notification change, focused check/config/notification tests, `go test ./...`, `go vet ./...`, `go build ./...`, and `git diff --check` passed with configured local services.
+The repository includes unit/API tests and PostgreSQL/Redis-backed repository and queue tests. Database tests require reachable local services and applied migrations. For the Redis cancellation and scheduler fixes, targeted scheduler/worker/queue tests, `go test ./...`, `go vet ./...`, `go build ./...`, and `git diff --check` passed with local services. A controlled run processed the reported overdue monitor through a failed check and an incident opening; its diagnostic data was then removed. An idle-worker process exited in under one second after Ctrl+C with real Redis. The original scheduling inactivity was not reproduced, so its historical cause remains unconfirmed.
 
 ## Next work
 

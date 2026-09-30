@@ -3,12 +3,16 @@ package queue
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 )
 
 const CheckQueue = "horus:checks"
+
+const dequeueWait = time.Second
 
 type Config struct {
 	Host string
@@ -54,23 +58,28 @@ func (r *Redis) EnqueueCheck(
 func (r *Redis) DequeueCheck(
 	ctx context.Context,
 ) (CheckJob, error) {
-	data, err := r.client.BRPop(
-		ctx,
-		0,
-		CheckQueue,
-	).Result()
-	if err != nil {
-		return CheckJob{}, err
+	for {
+		if err := ctx.Err(); err != nil {
+			return CheckJob{}, err
+		}
+
+		data, err := r.client.BRPop(ctx, dequeueWait, CheckQueue).Result()
+		if errors.Is(err, redis.Nil) {
+			continue
+		}
+		if err != nil {
+			return CheckJob{}, err
+		}
+
+		var job CheckJob
+
+		if err := json.Unmarshal(
+			[]byte(data[1]),
+			&job,
+		); err != nil {
+			return CheckJob{}, err
+		}
+
+		return job, nil
 	}
-
-	var job CheckJob
-
-	if err := json.Unmarshal(
-		[]byte(data[1]),
-		&job,
-	); err != nil {
-		return CheckJob{}, err
-	}
-
-	return job, nil
 }
