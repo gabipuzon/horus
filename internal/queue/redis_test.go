@@ -81,10 +81,8 @@ func TestRedisDequeueStopsAfterCancellation(t *testing.T) {
 func TestRedisCheckQueue(t *testing.T) {
 	ctx := context.Background()
 
-	redis := NewRedis(Config{
-		Host: "localhost",
-		Port: "6379",
-	})
+	// Keep queue integration tests away from the application's live Redis DB.
+	redis := &Redis{client: goredis.NewClient(&goredis.Options{Addr: "localhost:6379", DB: 14})}
 	defer redis.Close()
 
 	if err := redis.client.Del(ctx, CheckQueue).Err(); err != nil {
