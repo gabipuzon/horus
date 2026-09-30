@@ -20,6 +20,11 @@ Horus is a self-hosted uptime monitoring service written in Go. It stores HTTP m
 - Classify unsuccessful results as `http`, `network`, or `timeout`; successful results have an empty failure category.
 - List checks newest first with limit/offset pagination and return aggregate count/latency/latest-status summaries.
 
+### Incidents
+
+- Open one incident when a monitor fails, keep it open through repeated failures, and resolve it after a successful check.
+- Store outage start, optional resolution, and initial failure context in PostgreSQL. Incident history is not yet available through the API.
+
 ### Runtime
 
 - Expose a basic `/health` response.
@@ -43,7 +48,7 @@ Monitor JSON fields are `id`, `name`, `url`, `interval_seconds`, `timeout_second
 
 ## Not implemented yet
 
-Incidents and recovery tracking, notifications, authentication/ownership, uptime percentages, retries/backoff, readiness checks, metrics, structured logging, production configuration, and complete SSRF defenses are future work. Runtime connection/listen settings and worker count can be set through environment variables. The monitor constructor checks that name/URL are nonempty, interval/timeout are positive, and expected status is in the HTTP status range; URL safety checks run in the checker before dialing.
+Incident API access, notifications, authentication/ownership, uptime percentages, check execution retries, readiness checks, metrics, structured logging, production configuration, and complete SSRF defenses are future work. The scheduler retries scheduling errors on its next tick, and workers back off after dequeue errors. Runtime connection/listen settings and worker count can be set through environment variables. The monitor constructor checks that name/URL are nonempty, interval/timeout are positive, and expected status is in the HTTP status range; URL safety checks run in the checker before dialing.
 
 ## Principles and non-goals
 

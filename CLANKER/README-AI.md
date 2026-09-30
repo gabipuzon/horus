@@ -20,6 +20,6 @@ Use these files as a concise guide to the current repository. Source code and te
 
 ## Current implementation at a glance
 
-Horus is a Go HTTP API backed by PostgreSQL. A one-second scheduler enqueues due monitor checks in Redis; three workers consume jobs, execute HTTP checks, and persist results to PostgreSQL. The API exposes monitor management, check history, summaries, and `/health`.
+Horus is a Go HTTP API backed by PostgreSQL. A one-second scheduler enqueues due monitor checks in Redis and continues after transient scheduling errors; three workers consume jobs, execute HTTP checks, persist results, and update incident state in PostgreSQL. The API exposes monitor management, check history, summaries, and `/health`.
 
-Incidents, notifications, users/authentication, metrics, and complete SSRF protections are not implemented yet. The checker includes baseline URL restrictions and the application supports environment-based runtime configuration. See `PROGRESS.md` for the current detail.
+Incident lifecycle is implemented, but incident history and uptime are not exposed through the API yet. Notifications, users/authentication, metrics, and complete SSRF protections are not implemented. The checker includes baseline URL restrictions and the application supports environment-based runtime configuration. See `PROGRESS.md` for the current detail.

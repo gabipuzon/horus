@@ -59,7 +59,7 @@ GET    /monitors/{id}/summary
 - No incident API, uptime calculation, or notifications.
 - No user accounts, authentication, authorization, or monitor ownership.
 - The checker accepts only absolute HTTP/HTTPS URLs without embedded credentials, rejects non-public DNS results at connection time, and does not follow redirects. Other SSRF edge cases should continue to be reviewed as the service is hardened.
-- No check execution retries, duplicate-job protection, queue recovery/dead-letter handling, or configurable worker count. Scheduling errors are retried on the next tick, and workers back off after dequeue errors.
+- No check execution retries, duplicate-job protection, or queue recovery/dead-letter handling. Scheduling errors are retried on the next tick, and workers back off after dequeue errors.
 - No readiness endpoint, metrics, structured logging, production configuration, or container image for Horus.
 - PostgreSQL/Redis addresses and credentials, HTTP listen address, and worker count are configurable through `HORUS_DB_HOST`, `HORUS_DB_PORT`, `HORUS_DB_USER`, `HORUS_DB_PASSWORD`, `HORUS_DB_NAME`, `HORUS_REDIS_HOST`, `HORUS_REDIS_PORT`, `HORUS_HTTP_ADDR`, and `HORUS_WORKER_COUNT`. Local Compose-compatible defaults are used when unset; migrations must still be applied manually.
 - Monitor enable/disable and delete handlers do not distinguish a missing ID from a successful update/delete.

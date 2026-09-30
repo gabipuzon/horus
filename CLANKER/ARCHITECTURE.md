@@ -44,9 +44,9 @@ The API decodes and validates monitor creation through `monitor.New`, then calls
 
 ### Scheduling and checks
 
-The scheduler wakes every second, lists monitors, skips disabled or not-yet-due monitors, advances each due monitor's `next_check_at` by one interval, and pushes a `MonitorID` job to Redis. Redis uses the `horus:checks` list (`LPUSH`/blocking `BRPOP`). Three workers are started at process startup. Each worker loads the monitor, runs the checker through `CheckService`, and persists the result.
+The scheduler wakes every second, lists monitors, skips disabled or not-yet-due monitors, pushes a `MonitorID` job to Redis, then advances the due monitor's `next_check_at` by one interval. Scheduling errors are logged and retried on a later tick. Redis uses the `horus:checks` list (`LPUSH`/blocking `BRPOP`). Three workers are started at process startup. Each worker loads the monitor, runs the checker through `CheckService`, and persists the result.
 
-The checker performs a GET with a timeout derived from the monitor, measures elapsed time, and compares the response status to `expected_status`. Request errors are classified as `network` or `timeout`; mismatched HTTP responses are `http`. The check service persists every result first, then opens an incident for failures or resolves the open incident after success. Repeated failures are idempotent at the repository level and preserve the first failure context. If the incident transition fails, the check remains persisted and the service returns an explicit error. There is no retry, backoff, job acknowledgement/dead-letter strategy, or duplicate-job suppression.
+The checker performs a GET with a timeout derived from the monitor, measures elapsed time, and compares the response status to `expected_status`. Request errors are classified as `network` or `timeout`; mismatched HTTP responses are `http`. The check service persists every result first, then opens an incident for failures or resolves the open incident after success. Repeated failures are idempotent at the repository level and preserve the first failure context. If the incident transition fails, the check remains persisted and the service returns an explicit error. Workers back off after dequeue errors. There is no check execution retry, job acknowledgement/dead-letter strategy, or duplicate-job suppression.
 
 ### Shutdown
 
