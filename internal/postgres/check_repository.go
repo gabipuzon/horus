@@ -2,11 +2,13 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/gabipuzon/horus/internal/check"
 	"github.com/gabipuzon/horus/internal/incident"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -70,8 +72,8 @@ func (r *CheckRepository) Create(
 func (r *CheckRepository) OpenIncident(
 	ctx context.Context,
 	value incident.Incident,
-) error {
-	_, err := r.db.Exec(
+) (*incident.Incident, error) {
+	opened, err := scanIncident(r.db.QueryRow(
 		ctx,
 		`
 		INSERT INTO incidents (
@@ -84,6 +86,7 @@ func (r *CheckRepository) OpenIncident(
 		)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (monitor_id) WHERE resolved_at IS NULL DO NOTHING
+		RETURNING id, monitor_id, started_at, resolved_at, failure_type, status_code, failure_message
 		`,
 		uuid.NewString(),
 		value.MonitorID,
@@ -91,20 +94,33 @@ func (r *CheckRepository) OpenIncident(
 		value.FailureType,
 		value.StatusCode,
 		value.FailureMessage,
-	)
-	return err
+	))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &opened, nil
 }
 
 func (r *CheckRepository) ResolveIncident(
 	ctx context.Context,
 	monitorID string,
-) error {
-	_, err := r.db.Exec(
+) (*incident.Incident, error) {
+	resolved, err := scanIncident(r.db.QueryRow(
 		ctx,
-		`UPDATE incidents SET resolved_at = NOW() WHERE monitor_id = $1 AND resolved_at IS NULL`,
+		`UPDATE incidents SET resolved_at = NOW() WHERE monitor_id = $1 AND resolved_at IS NULL
+		 RETURNING id, monitor_id, started_at, resolved_at, failure_type, status_code, failure_message`,
 		monitorID,
-	)
-	return err
+	))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &resolved, nil
 }
 
 func (r *CheckRepository) ListByMonitor(

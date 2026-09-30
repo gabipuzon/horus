@@ -34,12 +34,12 @@ func (f *fakeWorkerCheckRepository) Create(
 	return nil
 }
 
-func (f *fakeWorkerCheckRepository) OpenIncident(context.Context, incident.Incident) error {
-	return nil
+func (f *fakeWorkerCheckRepository) OpenIncident(context.Context, incident.Incident) (*incident.Incident, error) {
+	return nil, nil
 }
 
-func (f *fakeWorkerCheckRepository) ResolveIncident(context.Context, string) error {
-	return nil
+func (f *fakeWorkerCheckRepository) ResolveIncident(context.Context, string) (*incident.Incident, error) {
+	return nil, nil
 }
 
 type fakeWorkerQueue struct {
@@ -90,7 +90,7 @@ func TestWorkerRetriesDequeueFailureAndProcessesNextJob(t *testing.T) {
 		t.Fatalf("failed to create monitor: %v", err)
 	}
 	checkRepository := &fakeWorkerCheckRepository{called: make(chan struct{}, 1)}
-	checkService := check.NewService(check.NewChecker(http.DefaultClient), checkRepository)
+	checkService := check.NewService(check.NewChecker(http.DefaultClient), checkRepository, nil)
 	checkQueue := &fakeWorkerQueue{
 		results: make(chan workerDequeueResult, 2),
 		calls:   make(chan struct{}, 3),
@@ -198,7 +198,7 @@ func TestCheckWorkerPoolProcessesQueuedMonitor(t *testing.T) {
 	}
 
 	checker := check.NewChecker(http.DefaultClient)
-	checkService := check.NewService(checker, checkRepository)
+	checkService := check.NewService(checker, checkRepository, nil)
 
 	checkQueue := &fakeWorkerQueue{
 		jobs: make(chan queue.CheckJob, 1),

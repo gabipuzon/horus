@@ -2,21 +2,23 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
 )
 
 type Config struct {
-	DatabaseHost     string
-	DatabasePort     string
-	DatabaseUser     string
-	DatabasePassword string
-	DatabaseName     string
-	RedisHost        string
-	RedisPort        string
-	HTTPAddr         string
-	WorkerCount      int
+	DatabaseHost      string
+	DatabasePort      string
+	DatabaseUser      string
+	DatabasePassword  string
+	DatabaseName      string
+	RedisHost         string
+	RedisPort         string
+	HTTPAddr          string
+	WorkerCount       int
+	DiscordWebhookURL string
 }
 
 func Load() (Config, error) {
@@ -25,15 +27,22 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("HORUS_WORKER_COUNT must be an integer between 1 and 1000")
 	}
 	cfg := Config{
-		DatabaseHost:     stringEnv("HORUS_DB_HOST", "localhost"),
-		DatabasePort:     stringEnv("HORUS_DB_PORT", "5432"),
-		DatabaseUser:     stringEnv("HORUS_DB_USER", "horus"),
-		DatabasePassword: stringEnv("HORUS_DB_PASSWORD", "horus"),
-		DatabaseName:     stringEnv("HORUS_DB_NAME", "horus"),
-		RedisHost:        stringEnv("HORUS_REDIS_HOST", "localhost"),
-		RedisPort:        stringEnv("HORUS_REDIS_PORT", "6379"),
-		HTTPAddr:         stringEnv("HORUS_HTTP_ADDR", ":8080"),
-		WorkerCount:      workerCount,
+		DatabaseHost:      stringEnv("HORUS_DB_HOST", "localhost"),
+		DatabasePort:      stringEnv("HORUS_DB_PORT", "5432"),
+		DatabaseUser:      stringEnv("HORUS_DB_USER", "horus"),
+		DatabasePassword:  stringEnv("HORUS_DB_PASSWORD", "horus"),
+		DatabaseName:      stringEnv("HORUS_DB_NAME", "horus"),
+		RedisHost:         stringEnv("HORUS_REDIS_HOST", "localhost"),
+		RedisPort:         stringEnv("HORUS_REDIS_PORT", "6379"),
+		HTTPAddr:          stringEnv("HORUS_HTTP_ADDR", ":8080"),
+		WorkerCount:       workerCount,
+		DiscordWebhookURL: strings.TrimSpace(stringEnv("HORUS_DISCORD_WEBHOOK_URL", "")),
+	}
+	if cfg.DiscordWebhookURL != "" {
+		webhook, err := url.Parse(cfg.DiscordWebhookURL)
+		if err != nil || (webhook.Scheme != "http" && webhook.Scheme != "https") || webhook.Host == "" || webhook.User != nil {
+			return Config{}, fmt.Errorf("HORUS_DISCORD_WEBHOOK_URL must be an absolute HTTP or HTTPS URL without credentials")
+		}
 	}
 	for key, value := range map[string]string{
 		"HORUS_DB_HOST": cfg.DatabaseHost, "HORUS_DB_PORT": cfg.DatabasePort,

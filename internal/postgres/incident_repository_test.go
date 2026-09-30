@@ -55,17 +55,17 @@ func TestIncidentRepositoryHistoryAndCurrent(t *testing.T) {
 
 	checks := NewCheckRepository(db)
 	started := time.Now().Add(-2 * time.Minute).Truncate(time.Microsecond)
-	if err := checks.OpenIncident(ctx, incident.Incident{
+	if opened, err := checks.OpenIncident(ctx, incident.Incident{
 		MonitorID: monitorID, StartedAt: started, FailureType: "http", StatusCode: 503,
-	}); err != nil {
+	}); err != nil || opened == nil {
 		t.Fatalf("failed to open first incident: %v", err)
 	}
-	if err := checks.ResolveIncident(ctx, monitorID); err != nil {
+	if resolved, err := checks.ResolveIncident(ctx, monitorID); err != nil || resolved == nil {
 		t.Fatalf("failed to resolve first incident: %v", err)
 	}
-	if err := checks.OpenIncident(ctx, incident.Incident{
+	if opened, err := checks.OpenIncident(ctx, incident.Incident{
 		MonitorID: monitorID, StartedAt: started.Add(time.Minute), FailureType: "network", FailureMessage: "connection refused",
-	}); err != nil {
+	}); err != nil || opened == nil {
 		t.Fatalf("failed to open second incident: %v", err)
 	}
 
@@ -84,7 +84,7 @@ func TestIncidentRepositoryHistoryAndCurrent(t *testing.T) {
 	if err != nil || len(values) != 1 || values[0].ResolvedAt == nil || values[0].FailureType != "http" || values[0].StatusCode != 503 {
 		t.Fatalf("expected resolved incident on second page, got %v, %v", values, err)
 	}
-	if err := checks.ResolveIncident(ctx, monitorID); err != nil {
+	if resolved, err := checks.ResolveIncident(ctx, monitorID); err != nil || resolved == nil {
 		t.Fatalf("failed to resolve current incident: %v", err)
 	}
 	current, err = repository.GetOpenByMonitor(ctx, monitorID)

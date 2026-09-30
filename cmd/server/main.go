@@ -14,6 +14,7 @@ import (
 	"github.com/gabipuzon/horus/internal/check"
 	"github.com/gabipuzon/horus/internal/config"
 	"github.com/gabipuzon/horus/internal/database"
+	"github.com/gabipuzon/horus/internal/notification"
 	"github.com/gabipuzon/horus/internal/postgres"
 	"github.com/gabipuzon/horus/internal/queue"
 	"github.com/gabipuzon/horus/internal/scheduler"
@@ -87,9 +88,14 @@ func main() {
 	incidentHandler := api.NewIncidentHandler(postgres.NewIncidentRepository(db), monitorRepository)
 
 	checker := check.NewChecker(http.DefaultClient)
+	var notifier notification.Notifier
+	if cfg.DiscordWebhookURL != "" {
+		notifier = notification.NewDiscord(cfg.DiscordWebhookURL, &http.Client{})
+	}
 	checkService := check.NewService(
 		checker,
 		checkRepository,
+		notifier,
 	)
 
 	workerPool := worker.NewPool(

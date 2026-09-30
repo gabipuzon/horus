@@ -24,11 +24,13 @@ Horus is a self-hosted uptime monitoring service written in Go. It stores HTTP m
 
 - Open one incident when a monitor fails, keep it open through repeated failures, and resolve it after a successful check.
 - Store outage start, optional resolution, and initial failure context in PostgreSQL. Expose paginated incident history and the current open incident, including elapsed or resolved duration.
+- Optionally send DOWN and RECOVERED Discord webhook messages when incidents open or resolve. Repeated failed checks and ordinary successful checks do not send notifications.
 
 ### Runtime
 
 - Expose a basic `/health` response.
 - Handle interrupt/SIGTERM and shut down workers and the HTTP server.
+- Configure optional Discord notifications with `HORUS_DISCORD_WEBHOOK_URL`; Horus starts normally when it is unset.
 
 ## API
 
@@ -50,7 +52,7 @@ Monitor JSON fields are `id`, `name`, `url`, `interval_seconds`, `timeout_second
 
 ## Not implemented yet
 
-Notifications, authentication/ownership, time-weighted uptime, check execution retries, readiness checks, metrics, structured logging, production configuration, and complete SSRF defenses are future work. The scheduler retries scheduling errors on its next tick, and workers back off after dequeue errors. Runtime connection/listen settings and worker count can be set through environment variables. The monitor constructor checks that name/URL are nonempty, interval/timeout are positive, and expected status is in the HTTP status range; URL safety checks run in the checker before dialing.
+Durable notification delivery and retries, authentication/ownership, time-weighted uptime, check execution retries, readiness checks, metrics, structured logging, production configuration, and complete SSRF defenses are future work. A Discord failure does not undo a persisted check or incident transition; the error is reported to the worker and that notification may be missed. The scheduler retries scheduling errors on its next tick, and workers back off after dequeue errors. Runtime connection/listen settings and worker count can be set through environment variables. The monitor constructor checks that name/URL are nonempty, interval/timeout are positive, and expected status is in the HTTP status range; URL safety checks run in the checker before dialing.
 
 ## Principles and non-goals
 

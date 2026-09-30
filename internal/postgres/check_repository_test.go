@@ -149,13 +149,15 @@ func TestCheckRepositoryIncidentLifecycle(t *testing.T) {
 		StatusCode:     503,
 		FailureMessage: "unexpected status",
 	}
-	if err := repository.OpenIncident(ctx, first); err != nil {
+	opened, err := repository.OpenIncident(ctx, first)
+	if err != nil || opened == nil {
 		t.Fatalf("failed to open incident: %v", err)
 	}
 	first.FailureType = "network"
 	first.StatusCode = 0
 	first.FailureMessage = "later failure"
-	if err := repository.OpenIncident(ctx, first); err != nil {
+	opened, err = repository.OpenIncident(ctx, first)
+	if err != nil || opened != nil {
 		t.Fatalf("failed to keep incident open: %v", err)
 	}
 
@@ -184,8 +186,15 @@ func TestCheckRepositoryIncidentLifecycle(t *testing.T) {
 		t.Fatalf("expected repeated failure to retain one incident, got %d", count)
 	}
 
-	if err := repository.ResolveIncident(ctx, monitorID); err != nil {
+	resolved, err := repository.ResolveIncident(ctx, monitorID)
+	if err != nil || resolved == nil {
 		t.Fatalf("failed to resolve incident: %v", err)
+	}
+	if resolved.ID != id || resolved.ResolvedAt == nil {
+		t.Fatalf("expected resolved transition for incident %q, got %+v", id, resolved)
+	}
+	if unchanged, err := repository.ResolveIncident(ctx, monitorID); err != nil || unchanged != nil {
+		t.Fatalf("expected no second resolution transition, got %+v, %v", unchanged, err)
 	}
 	var resolvedID string
 	if err := db.QueryRow(ctx, `SELECT id FROM incidents WHERE monitor_id = $1 AND resolved_at IS NOT NULL`, monitorID).Scan(&resolvedID); err != nil {
@@ -196,7 +205,8 @@ func TestCheckRepositoryIncidentLifecycle(t *testing.T) {
 	}
 
 	first.StartedAt = time.Now()
-	if err := repository.OpenIncident(ctx, first); err != nil {
+	opened, err = repository.OpenIncident(ctx, first)
+	if err != nil || opened == nil {
 		t.Fatalf("failed to open subsequent incident: %v", err)
 	}
 	if err := db.QueryRow(ctx, `SELECT COUNT(*) FROM incidents WHERE monitor_id = $1`, monitorID).Scan(&count); err != nil {

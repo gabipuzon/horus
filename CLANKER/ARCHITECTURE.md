@@ -14,6 +14,10 @@ PostgreSQL monitors ──> 1s scheduler ──> Redis list `horus:checks`
                                       HTTP checker / target
                                                 │
                                       check result ──> PostgreSQL
+                                                │
+                                      incident transition
+                                                │
+                                      optional Discord webhook
 ```
 
 Startup and wiring live in `cmd/server/main.go`; environment parsing and validation live in `internal/config`. PostgreSQL, Redis, HTTP listen address, and worker count use `HORUS_*` variables with local Compose-compatible defaults. The process checks PostgreSQL and Redis at startup. `compose.yaml` provides PostgreSQL 17 and Redis 8 for local development.
@@ -27,6 +31,7 @@ internal/check/    check result types, HTTP checker, check service and incident 
 internal/incident/ incident domain model and failure context
 internal/database/ PostgreSQL connection pool construction
 internal/monitor/  monitor domain model and validation
+internal/notification/ optional Discord webhook transport
 internal/postgres/ PostgreSQL monitor, check, and incident repositories
 internal/queue/    Redis list client and check job payload
 internal/scheduler/ due-monitor scheduling
@@ -46,7 +51,9 @@ The API decodes and validates monitor creation through `monitor.New`, then calls
 
 The scheduler wakes every second, lists monitors, skips disabled or not-yet-due monitors, pushes a `MonitorID` job to Redis, then advances the due monitor's `next_check_at` by one interval. Scheduling errors are logged and retried on a later tick. Redis uses the `horus:checks` list (`LPUSH`/blocking `BRPOP`). Three workers are started at process startup. Each worker loads the monitor, runs the checker through `CheckService`, and persists the result.
 
-The checker performs a GET with a timeout derived from the monitor, measures elapsed time, and compares the response status to `expected_status`. Request errors are classified as `network` or `timeout`; mismatched HTTP responses are `http`. The check service persists every result first, then opens an incident for failures or resolves the open incident after success. Repeated failures are idempotent at the repository level and preserve the first failure context. If the incident transition fails, the check remains persisted and the service returns an explicit error. Workers back off after dequeue errors. There is no check execution retry, job acknowledgement/dead-letter strategy, or duplicate-job suppression.
+The checker performs a GET with a timeout derived from the monitor, measures elapsed time, and compares the response status to `expected_status`. Request errors are classified as `network` or `timeout`; mismatched HTTP responses are `http`. The check service persists every result first, then opens an incident for failures or resolves the open incident after success. PostgreSQL returns the incident only when an insert or resolution actually changes a row; repeated failures and ordinary successes do not produce transitions. On each transition, the service sends one DOWN or RECOVERED notification through the optional notifier. Messages include monitor details, initial failure context, and incident times; recovery includes outage duration. If the incident transition fails, the check remains persisted and the service returns an explicit error. If Discord fails after a transition, check and incident state remain persisted and the service returns an error for the worker to log. Workers back off after dequeue errors. There is no check execution retry, job acknowledgement/dead-letter strategy, or duplicate-job suppression.
+
+`HORUS_DISCORD_WEBHOOK_URL` enables Discord notifications. An unset or blank value disables them without affecting startup. The Discord client uses a context-aware HTTP request with a five-second deadline and treats non-2xx responses as delivery failures. Notification delivery is synchronous with check processing and has no durable queue or retry.
 
 ### Shutdown
 
@@ -86,4 +93,4 @@ The summary reports counts, average latency, latest HTTP status, and `uptime_per
 - The scheduler currently shares one process with API and workers; Redis does not imply independently deployed workers.
 - Worker count and service settings are configurable through environment variables, but there is no production configuration profile or secret management.
 - The checker allows only HTTP/HTTPS URLs without user information, blocks non-public DNS results during dialing, and does not follow redirects. SSRF defenses should still be reviewed and extended as needed.
-- There is no authentication, authorization, readiness endpoint, metrics, or notification subsystem. Uptime reflects the proportion of successful checks rather than elapsed availability. Check persistence and incident transitions are separate operations rather than one transaction, so a transition failure can leave incident state that does not reflect the latest persisted check until a later check transitions it.
+- There is no authentication, authorization, readiness endpoint, metrics, or durable notification delivery. Uptime reflects the proportion of successful checks rather than elapsed availability. Check persistence and incident transitions are separate operations rather than one transaction, so a transition failure can leave incident state that does not reflect the latest persisted check until a later check transitions it. A Discord delivery failure is reported but not retried, so that transition's notification may be missed.
