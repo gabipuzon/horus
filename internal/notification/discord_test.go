@@ -94,3 +94,28 @@ func TestDiscordRespectsCancellationAndTimeout(t *testing.T) {
 		t.Fatalf("expected bounded request timeout, got %v", err)
 	}
 }
+
+func TestDiscordErrorsDoNotExposeWebhook(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	server.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	for _, test := range []struct {
+		ctx     context.Context
+		webhook string
+	}{
+		{ctx, server.URL + "/api/webhooks/test/secret-token"},
+		{context.Background(), server.URL + "/api/webhooks/test/secret-token"},
+		{context.Background(), "://secret-token"},
+	} {
+		err := NewDiscord(test.webhook, server.Client()).Notify(test.ctx, Event{State: Down})
+		if err == nil {
+			t.Fatal("expected request error")
+		}
+		if strings.Contains(err.Error(), test.webhook) || strings.Contains(err.Error(), "secret-token") {
+			t.Fatal("notification error exposes the webhook secret")
+		}
+	}
+}

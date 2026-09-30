@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -36,6 +37,25 @@ type Discord struct {
 	client     *http.Client
 	timeout    time.Duration
 }
+
+// HTTP errors may contain the webhook URL, including its secret token. Keep
+// their log message safe while preserving cancellation checks through Unwrap.
+type webhookRequestError struct {
+	cause error
+}
+
+func (e *webhookRequestError) Error() string {
+	switch {
+	case errors.Is(e.cause, context.Canceled):
+		return "Discord webhook request canceled"
+	case errors.Is(e.cause, context.DeadlineExceeded):
+		return "Discord webhook request timed out"
+	default:
+		return "Discord webhook request failed"
+	}
+}
+
+func (e *webhookRequestError) Unwrap() error { return e.cause }
 
 func NewDiscord(webhookURL string, client *http.Client) *Discord {
 	if client == nil {
@@ -83,12 +103,12 @@ func (d *Discord) Notify(ctx context.Context, event Event) error {
 	defer cancel()
 	req, err := http.NewRequestWithContext(requestCtx, http.MethodPost, d.webhookURL, bytes.NewReader(payload))
 	if err != nil {
-		return err
+		return &webhookRequestError{cause: err}
 	}
 	req.Header.Set("Content-Type", "application/json")
 	response, err := d.client.Do(req)
 	if err != nil {
-		return err
+		return &webhookRequestError{cause: err}
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
