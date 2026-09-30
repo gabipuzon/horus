@@ -1,6 +1,36 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"testing"
+)
+
+func TestLoadRequiresExportedDiscordWebhook(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("HORUS_DISCORD_WEBHOOK_URL", "")
+	if err := os.Unsetenv("HORUS_DISCORD_WEBHOOK_URL"); err != nil {
+		t.Fatal(err)
+	}
+	const webhook = "https://discord.example/api/webhooks/test/token"
+	if err := os.WriteFile(".env", []byte("HORUS_DISCORD_WEBHOOK_URL="+webhook+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DiscordWebhookURL != "" {
+		t.Fatal("a .env file alone must not enable notifications")
+	}
+	t.Setenv("HORUS_DISCORD_WEBHOOK_URL", webhook)
+	cfg, err = Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DiscordWebhookURL != webhook {
+		t.Fatal("exported webhook must enable notification configuration")
+	}
+}
 
 func TestLoadDefaults(t *testing.T) {
 	t.Setenv("HORUS_WORKER_COUNT", "3")

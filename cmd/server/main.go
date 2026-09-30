@@ -42,6 +42,15 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func newNotifier(cfg config.Config) notification.Notifier {
+	if cfg.DiscordWebhookURL == "" {
+		log.Println("Discord notifications disabled")
+		return nil
+	}
+	log.Println("Discord notifications enabled")
+	return notification.NewDiscord(cfg.DiscordWebhookURL, &http.Client{})
+}
+
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
@@ -88,10 +97,7 @@ func main() {
 	incidentHandler := api.NewIncidentHandler(postgres.NewIncidentRepository(db), monitorRepository)
 
 	checker := check.NewChecker(http.DefaultClient)
-	var notifier notification.Notifier
-	if cfg.DiscordWebhookURL != "" {
-		notifier = notification.NewDiscord(cfg.DiscordWebhookURL, &http.Client{})
-	}
+	notifier := newNotifier(cfg)
 	checkService := check.NewService(
 		checker,
 		checkRepository,
