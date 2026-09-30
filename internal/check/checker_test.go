@@ -2,6 +2,7 @@ package check
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -32,6 +33,7 @@ func TestCheckerTimeout(t *testing.T) {
 	}
 
 	checker := NewChecker(&http.Client{})
+	checker.dialContext = (&net.Dialer{}).DialContext
 
 	result := checker.Check(context.Background(), m)
 
@@ -69,6 +71,7 @@ func TestChecker(t *testing.T) {
 	}
 
 	checker := NewChecker(&http.Client{})
+	checker.dialContext = (&net.Dialer{}).DialContext
 
 	result := checker.Check(context.Background(), m)
 
@@ -114,6 +117,7 @@ func TestCheckerHTTPFailure(t *testing.T) {
 	}
 
 	checker := NewChecker(&http.Client{})
+	checker.dialContext = (&net.Dialer{}).DialContext
 
 	result := checker.Check(context.Background(), m)
 
@@ -133,5 +137,24 @@ func TestCheckerHTTPFailure(t *testing.T) {
 			"expected HTTP failure, got %q",
 			result.FailureType,
 		)
+	}
+}
+
+func TestSafeDialBlocksPrivateAddresses(t *testing.T) {
+	for _, address := range []string{"127.0.0.1:80", "10.0.0.1:443", "169.254.169.254:80", "[::1]:80"} {
+		if isPublicIP(net.ParseIP(address[:len(address)-3])) {
+			t.Errorf("expected %s to be blocked", address)
+		}
+	}
+}
+
+func TestCheckerRejectsNonHTTPURL(t *testing.T) {
+	m, err := monitor.New("bad", "file:///etc/passwd", time.Minute, time.Second, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := NewChecker(nil).Check(context.Background(), m)
+	if result.Error == nil || result.FailureType != FailureNetwork {
+		t.Fatalf("expected URL validation failure, got %+v", result)
 	}
 }

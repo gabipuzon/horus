@@ -48,6 +48,7 @@ func TestCheckServiceCheck(t *testing.T) {
 	}
 
 	checker := NewChecker(server.Client())
+	checker.dialContext = server.Client().Transport.(*http.Transport).DialContext
 	repository := &fakeCheckRepository{}
 
 	service := NewService(checker, repository)
