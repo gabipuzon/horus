@@ -12,6 +12,7 @@ import (
 
 	"github.com/gabipuzon/horus/internal/api"
 	"github.com/gabipuzon/horus/internal/check"
+	"github.com/gabipuzon/horus/internal/config"
 	"github.com/gabipuzon/horus/internal/database"
 	"github.com/gabipuzon/horus/internal/postgres"
 	"github.com/gabipuzon/horus/internal/queue"
@@ -41,6 +42,10 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatal(err)
+	}
 	ctx, stop := signal.NotifyContext(
 		context.Background(),
 		os.Interrupt,
@@ -49,11 +54,11 @@ func main() {
 	defer stop()
 
 	db, err := database.NewPool(ctx, database.Config{
-		Host:     "localhost",
-		Port:     "5432",
-		User:     "horus",
-		Password: "horus",
-		Name:     "horus",
+		Host:     cfg.DatabaseHost,
+		Port:     cfg.DatabasePort,
+		User:     cfg.DatabaseUser,
+		Password: cfg.DatabasePassword,
+		Name:     cfg.DatabaseName,
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -61,8 +66,8 @@ func main() {
 	defer db.Close()
 
 	redis := queue.NewRedis(queue.Config{
-		Host: "localhost",
-		Port: "6379",
+		Host: cfg.RedisHost,
+		Port: cfg.RedisPort,
 	})
 
 	if err := redis.Ping(ctx); err != nil {
@@ -87,7 +92,7 @@ func main() {
 
 	workerPool := worker.NewPool(
 		ctx,
-		3,
+		cfg.WorkerCount,
 		redis,
 		monitorRepository,
 		checkService,
@@ -125,12 +130,12 @@ func main() {
 	)
 
 	server := &http.Server{
-		Addr:    ":8080",
+		Addr:    cfg.HTTPAddr,
 		Handler: mux,
 	}
 
 	go func() {
-		log.Println("horus server listening on :8080")
+		log.Printf("horus server listening on %s", cfg.HTTPAddr)
 
 		if err := server.ListenAndServe(); err != nil &&
 			err != http.ErrServerClosed {
