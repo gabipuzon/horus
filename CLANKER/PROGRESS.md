@@ -32,8 +32,10 @@ The code is organized by responsibility: `api`, `check`, `config`, `database`, `
 ### Discord notifications
 
 - Optional `HORUS_DISCORD_WEBHOOK_URL` enables DOWN on incident creation and RECOVERED on resolution. Repeated failures and ordinary successes send nothing.
+- The webhook variable must be exported into the process environment; `.env` is not automatically loaded. Startup logs enabled/disabled state without the URL. Enabling notifications does not replay existing incidents.
 - The webhook message includes monitor name and URL, incident failure context and start time, and recovery time and duration when resolved.
 - Requests use the check context and a five-second deadline. A Discord failure leaves the persisted check and incident transition intact and is returned to the worker for logging; there is no delivery retry or durable queue.
+- Request errors are safe to log without disclosing the webhook URL/token; HTTP failures retain their response status, and cancellation/timeout remain detectable through error unwrapping.
 
 ### Scheduling and workers
 
@@ -77,6 +79,8 @@ GET    /monitors/{id}/incidents/current
 ## Verification record
 
 The repository includes unit/API tests and PostgreSQL/Redis-backed repository and queue tests. Database tests require reachable local services and applied migrations. For the Redis cancellation and scheduler fixes, targeted scheduler/worker/queue tests, `go test ./...`, `go vet ./...`, `go build ./...`, and `git diff --check` passed with local services. A controlled run processed the reported overdue monitor through a failed check and an incident opening; its diagnostic data was then removed. An idle-worker process exited in under one second after Ctrl+C with real Redis. The original scheduling inactivity was not reproduced, so its historical cause remains unconfirmed.
+
+Discord configuration investigation confirmed that the running process lacked `HORUS_DISCORD_WEBHOOK_URL` even though `.env` contained it. Configuration and startup-wiring tests now cover this boundary, and notification tests cover secret-safe request errors. Focused config/check/notification tests, `go test ./...`, `go vet ./...`, `go build ./...`, and `git diff --check` passed. A manual run with a temporary PostgreSQL database and isolated Redis reproduced disabled delivery, then verified one DOWN across three failed HTTP 500 checks and one RECOVERED across two successful HTTP 200 checks. A local observation relay forwarded the configured notifications to Discord and recorded HTTP 204 for each. Temporary services/data were removed. The application still requires settings to be exported before startup.
 
 ## Next work
 

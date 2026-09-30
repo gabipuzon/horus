@@ -55,6 +55,8 @@ The checker performs a GET with a timeout derived from the monitor, measures ela
 
 `HORUS_DISCORD_WEBHOOK_URL` enables Discord notifications. An unset or blank value disables them without affecting startup. The Discord client uses a context-aware HTTP request with a five-second deadline and treats non-2xx responses as delivery failures. Notification delivery is synchronous with check processing and has no durable queue or retry.
 
+Configuration uses `os.LookupEnv`; the application does not read `.env`. Local shell settings must be exported to the process before startup. The server logs `Discord notifications enabled` or `Discord notifications disabled` when constructing the notifier. Request errors expose only safe failure categories (including cancellation and timeout), while non-2xx errors include the HTTP status; neither includes the webhook URL. Existing open incidents do not generate a DOWN notification when configuration is enabled later.
+
 ### Shutdown
 
 Interrupt and SIGTERM cancel the root context. Workers are cancelled and joined, then the HTTP server receives a five-second graceful-shutdown deadline. An idle Redis dequeue notices cancellation after its current blocking wait, normally within one second; in-flight operations still depend on their own cancellation behavior. PostgreSQL and Redis clients are closed on process exit.

@@ -92,6 +92,33 @@ The API will be available at:
 http://localhost:8080
 ```
 
+### Optional Discord notifications
+
+Horus reads the process environment; it does not automatically load `.env`.
+To use a local `.env`, create it from `.env.example` if needed, set
+`HORUS_DISCORD_WEBHOOK_URL`, and start Horus with its values exported:
+
+```bash
+(
+  set -a
+  . ./.env
+  set +a
+  go run ./cmd/server
+)
+```
+
+Startup logs `Discord notifications enabled` or `Discord notifications disabled`
+without exposing the webhook URL. An unset or blank value disables notifications.
+Production deployments should provide the variable through their process environment.
+
+DOWN is sent only when a new incident opens; RECOVERED is sent when that incident
+resolves. For a DOWN test, create a fresh monitor for
+`https://httpbin.org/status/500` expecting HTTP 200. Repeated failures during an
+existing incident do not send more messages. Enabling notifications or restarting
+Horus does not replay an incident that opened while notifications were disabled.
+Webhook failures are logged without the webhook URL and do not undo persisted
+checks or incidents; delivery is not retried.
+
 ## Creating a Monitor
 
 Create a monitor for a public HTTP endpoint:
