@@ -26,7 +26,8 @@ type Redis struct {
 func NewRedis(config Config) *Redis {
 	return &Redis{
 		client: redis.NewClient(&redis.Options{
-			Addr: fmt.Sprintf("%s:%s", config.Host, config.Port),
+			Addr:                  fmt.Sprintf("%s:%s", config.Host, config.Port),
+			ContextTimeoutEnabled: true,
 		}),
 	}
 }

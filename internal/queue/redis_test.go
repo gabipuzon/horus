@@ -3,6 +3,7 @@ package queue
 import (
 	"context"
 	"errors"
+	"net"
 	"testing"
 	"time"
 
@@ -18,6 +19,38 @@ func TestRedisPing(t *testing.T) {
 
 	if err := redis.Ping(context.Background()); err != nil {
 		t.Fatalf("expected redis ping to succeed: %v", err)
+	}
+}
+
+func TestRedisPingRespectsContextDeadline(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	closed := make(chan struct{})
+	defer close(closed)
+	go func() {
+		connection, err := listener.Accept()
+		if err == nil {
+			defer connection.Close()
+			<-closed
+		}
+	}()
+	host, port, err := net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := NewRedis(Config{Host: host, Port: port})
+	defer r.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	if err := r.Ping(ctx); err == nil {
+		t.Fatal("expected stalled Redis ping to fail")
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("Redis ping ignored context deadline, taking %s", elapsed)
 	}
 }
 
