@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"log"
 	"time"
 
 	"github.com/gabipuzon/horus/internal/monitor"
@@ -50,7 +51,10 @@ func (s *Scheduler) Run(ctx context.Context) error {
 
 		case <-ticker.C:
 			if _, err := s.schedule(ctx); err != nil {
-				return err
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				log.Printf("scheduler failed to schedule checks: %v", err)
 			}
 		}
 	}
