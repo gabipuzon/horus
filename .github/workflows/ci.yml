@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      HORUS_DB_HOST: localhost
+      HORUS_DB_PORT: "5432"
+      HORUS_DB_USER: horus
+      HORUS_DB_PASSWORD: horus
+      HORUS_DB_NAME: horus
+      HORUS_REDIS_HOST: localhost
+      HORUS_REDIS_PORT: "6379"
+      HORUS_DISCORD_WEBHOOK_URL: ""
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: horus
+          POSTGRES_PASSWORD: horus
+          POSTGRES_DB: horus
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U horus -d horus"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      redis:
+        image: redis:8
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Apply migrations
+        run: go run ./cmd/migrate
+      - name: Run tests
+        run: go test ./...
+      - name: Run race detector
+        run: go test -race ./...
+      - name: Run vet
+        run: go vet ./...
+      - name: Build Go packages
+        run: go build ./...
+      - name: Build Docker image
+        run: docker build .
