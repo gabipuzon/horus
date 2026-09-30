@@ -73,6 +73,10 @@ Migrations remain numbered SQL files under `migrations/`, embedded in `cmd/migra
 
 `monitors` stores UUID, name, URL, interval/timeout in seconds, expected status, enabled flag, timestamps, and (after migration 003) `next_check_at`. `checks` stores UUID, monitor foreign key with cascade delete, nullable status code, latency in milliseconds, success, failure type, nullable error, and check timestamp. An index supports per-monitor history ordered by recent check time. `incidents` stores outage start, optional resolution, and initial failure context. A partial unique index permits only one unresolved incident per monitor.
 
+## CI
+
+`.github/workflows/ci.yml` checks pushes to `main` and pull requests targeting `main`. One Ubuntu job starts PostgreSQL 17 and Redis 8 service containers with healthchecks, runs `cmd/migrate` against a fresh database, then executes Go tests, race tests, vet, build, and a Docker image build. The job uses local test credentials and a blank Discord webhook. Migration integration tests create an isolated schema inside a transaction. The Redis queue integration test uses DB 14, separate from the application's DB 0 and the cancellation test's DB 15.
+
 ## HTTP API
 
 Routes are registered with Go's `net/http` method/path patterns in `cmd/server/main.go`:

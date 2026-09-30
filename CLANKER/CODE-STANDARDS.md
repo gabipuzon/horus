@@ -5,7 +5,7 @@ These conventions describe the current Go code and preferred changes. Security a
 ## Go and packages
 
 - Format Go code with `gofmt`; use idiomatic Go names and conventional acronym casing (`ID`, `URL`, `HTTP`, `API`).
-- Keep packages cohesive by responsibility. Current code is organized under `internal/api`, `internal/check`, `internal/config`, `internal/database`, `internal/incident`, `internal/monitor`, `internal/notification`, `internal/postgres`, `internal/queue`, `internal/scheduler`, and `internal/worker`.
+- Keep packages cohesive by responsibility. Current code is organized under `internal/api`, `internal/check`, `internal/config`, `internal/database`, `internal/incident`, `internal/migrate`, `internal/monitor`, `internal/notification`, `internal/postgres`, `internal/queue`, `internal/scheduler`, and `internal/worker`.
 - Keep SQL in `internal/postgres`, HTTP transport in API handlers, monitor domain behavior in `internal/monitor`, incident types in `internal/incident`, Discord HTTP transport in `internal/notification`, check execution and lifecycle coordination in `internal/check`, scheduling in `internal/scheduler`, and queue consumption in `internal/worker`.
 - Define small interfaces near their consumers where that improves testability. Avoid speculative abstractions and dependencies.
 - Pass `context.Context` to I/O operations, propagate cancellation, and handle errors explicitly with useful context where appropriate.
@@ -39,6 +39,7 @@ Handlers decode and validate request-level input, call repository/application be
 - PostgreSQL holds durable monitor, check, and incident state; Redis currently carries jobs on `horus:checks`. Discord notifications are optional and sent after incident transitions. Delivery errors must not undo persisted state.
 - Keep worker concurrency bounded and respect cancellation. Current process starts three workers.
 - Test domain behavior and handler contracts with focused tests. Repository tests connect to a local PostgreSQL instance, so they require the database and applied migrations.
+- Keep integration tests isolated from live application data. Migration tests use their own rolled-back schema; Redis queue tests use a separate test DB. CI starts real PostgreSQL and Redis services and runs migrations before tests.
 
 ## Security status
 

@@ -13,6 +13,7 @@
 - Add or update focused tests for meaningful behavior when implementation work calls for them.
 - Run `gofmt` on changed Go files. Run relevant tests when requested or when needed to verify the change; report the exact commands and outcome. Do not claim a test passed unless it was run.
 - Database-backed repository tests connect to `postgres://horus:horus@localhost:5432/horus` and require applied SQL migrations. For a fresh local stack, `cp .env.example .env` then `docker compose up --build` starts PostgreSQL, Redis, a one-shot migration job, and Horus. For direct Go runs, start only `postgres redis`, export `.env`, run `go run ./cmd/migrate`, then `go run ./cmd/server`. Go binaries do not load `.env` themselves.
+- `.github/workflows/ci.yml` runs against fresh PostgreSQL and Redis services: migrate, test, race test, vet, Go build, and Docker build. Keep automated tests independent of public websites and Discord secrets.
 - Review the final diff and keep changes within the requested scope.
 
 ## Documentation

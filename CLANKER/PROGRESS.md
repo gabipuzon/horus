@@ -51,6 +51,12 @@ The code is organized by responsibility: `api`, `check`, `config`, `database`, `
 - Compose starts PostgreSQL 17 and Redis 8 with healthchecks, runs migrations after PostgreSQL becomes healthy, then starts Horus after Redis is healthy and migrations succeed. Horus container health uses `/ready`.
 - Compose keeps PostgreSQL data in the `postgres_data` named volume. It reads local `.env` for variable substitution and sets `postgres`/`redis` service hostnames inside containers; the Go binaries still read only process environment variables.
 
+### Continuous integration
+
+- A single GitHub Actions workflow runs on pushes to `main` and pull requests targeting it, cancelling obsolete runs for the same branch or PR. It grants repository read permission only.
+- PostgreSQL 17 and Redis 8 services use healthchecks. CI applies migrations through `cmd/migrate`, then runs tests, race tests, vet, Go build, and Docker build without a Discord webhook or repository secrets.
+- Migration tests keep schema work inside a rolled-back transaction. The Redis queue integration test uses DB 14 so a locally running Horus worker on DB 0 cannot consume its jobs.
+
 ## Routes
 
 ```text
@@ -89,6 +95,8 @@ For liveness and readiness, focused server and Redis tests, `go test ./...`, `go
 
 For containerization and migrations, integration tests covered fresh, repeated, partial, and failing migrations. `go test ./...`, `go vet ./...`, `go build ./...`, `git diff --check`, and `docker compose build` passed. An isolated fresh Compose project applied four migrations, reached healthy PostgreSQL/Redis/Horus states, and persisted successful HTTPS checks for a created monitor. `docker compose stop horus` exited cleanly with code 0. After `docker compose down` and `up`, the migration job applied zero versions and the monitor remained available.
 
+For CI, the local migration command applied four versions on an isolated fresh PostgreSQL service and zero on a repeated run. `go test ./...`, `go test -race ./...`, `go vet ./...`, `go build ./...`, `git diff --check`, and `docker build .` passed with local services. The Redis queue race test passed three consecutive runs after moving its jobs to DB 14. The GitHub-hosted workflow has not yet been run.
+
 ## Next work
 
-Phase 7 is CI. Authentication/authorization, queue recovery, telemetry, and durable notification delivery remain future work.
+Phase 8 has not been scoped. Authentication/authorization, queue recovery, telemetry, and durable notification delivery remain future work.

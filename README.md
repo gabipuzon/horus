@@ -66,6 +66,13 @@ It periodically checks configured URLs, records the results in PostgreSQL, and e
 * Docker and Docker Compose for the preferred quick start
 * Go for running the process directly
 
+## Continuous integration
+
+GitHub Actions runs on pushes to `main` and pull requests targeting `main`.
+CI starts PostgreSQL and Redis, applies the SQL migrations with `cmd/migrate`,
+then runs tests, the race detector, `go vet`, `go build`, and a Docker image build.
+The workflow does not need a Discord webhook or repository secrets.
+
 ## Quick start with Docker Compose
 
 Copy the safe local defaults, then build and start the stack:
@@ -273,7 +280,6 @@ horus/
 │   ├── monitor/
 │   ├── notification/
 │   ├── postgres/
-│   ├── queue/
 │   ├── queue/
 │   ├── scheduler/
 │   └── worker/
