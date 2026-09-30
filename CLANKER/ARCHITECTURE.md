@@ -25,7 +25,7 @@ Startup and wiring live in `cmd/server/main.go`; environment parsing and validat
 ## Packages
 
 ```text
-cmd/server/        process startup, dependency wiring, routes, health handler
+cmd/server/        process startup, dependency wiring, routes, liveness and readiness handlers
 internal/api/      monitor, check, and incident HTTP handlers / JSON contracts
 internal/check/    check result types, HTTP checker, check service and incident transitions
 internal/incident/ incident domain model and failure context
@@ -61,6 +61,10 @@ Configuration uses `os.LookupEnv`; the application does not read `.env`. Local s
 
 Interrupt and SIGTERM cancel the root context. Workers are cancelled and joined, then the HTTP server receives a five-second graceful-shutdown deadline. An idle Redis dequeue notices cancellation after its current blocking wait, normally within one second; in-flight operations still depend on their own cancellation behavior. PostgreSQL and Redis clients are closed on process exit.
 
+### Liveness and readiness
+
+`GET /health` returns `{"status":"ok"}` whenever the HTTP process serves the request; it performs no dependency I/O. `GET /ready` pings the existing PostgreSQL pool and Redis client with the request context and a shared one-second deadline. The Redis client has context timeouts enabled so the deadline also bounds its socket I/O. Readiness returns `200 {"status":"ready"}` only when both pings succeed before the deadline; otherwise it returns `503 {"status":"not_ready"}`. Responses never include raw dependency errors or connection details. Startup still requires successful initial PostgreSQL and Redis connections.
+
 ## Persistence
 
 Migrations are plain SQL files and are not applied automatically by startup. Apply `001_create_monitors.sql`, `002_create_checks.sql`, `003_add_monitor_next_check_at.sql`, then `004_create_incidents.sql` in order.
@@ -73,6 +77,7 @@ Routes are registered with Go's `net/http` method/path patterns in `cmd/server/m
 
 ```text
 GET    /health
+GET    /ready
 POST   /monitors
 GET    /monitors
 GET    /monitors/{id}
@@ -95,4 +100,4 @@ The summary reports counts, average latency, latest HTTP status, and `uptime_per
 - The scheduler currently shares one process with API and workers; Redis does not imply independently deployed workers.
 - Worker count and service settings are configurable through environment variables, but there is no production configuration profile or secret management.
 - The checker allows only HTTP/HTTPS URLs without user information, blocks non-public DNS results during dialing, and does not follow redirects. SSRF defenses should still be reviewed and extended as needed.
-- There is no authentication, authorization, readiness endpoint, metrics, or durable notification delivery. Uptime reflects the proportion of successful checks rather than elapsed availability. Check persistence and incident transitions are separate operations rather than one transaction, so a transition failure can leave incident state that does not reflect the latest persisted check until a later check transitions it. A Discord delivery failure is reported but not retried, so that transition's notification may be missed.
+- There is no authentication, authorization, metrics, or durable notification delivery. Readiness checks connectivity only; it does not confirm migrations, scheduler progress, worker activity, or delivery of queued checks. Uptime reflects the proportion of successful checks rather than elapsed availability. Check persistence and incident transitions are separate operations rather than one transaction, so a transition failure can leave incident state that does not reflect the latest persisted check until a later check transitions it. A Discord delivery failure is reported but not retried, so that transition's notification may be missed.

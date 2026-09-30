@@ -28,7 +28,7 @@ Horus is a self-hosted uptime monitoring service written in Go. It stores HTTP m
 
 ### Runtime
 
-- Expose a basic `/health` response.
+- Expose `/health` for process liveness and `/ready` for PostgreSQL and Redis connectivity readiness.
 - Handle interrupt/SIGTERM and shut down workers and the HTTP server; idle Redis dequeues use a bounded wait so cancellation can complete promptly.
 - Configure optional Discord notifications with `HORUS_DISCORD_WEBHOOK_URL`; Horus starts normally when it is unset.
 - Export settings into the process environment before starting Horus; `.env` is not loaded automatically. Startup logs whether Discord is enabled, without printing its webhook URL. Only new incident transitions notify; existing incidents are not replayed after enabling notifications.
@@ -38,6 +38,7 @@ Horus is a self-hosted uptime monitoring service written in Go. It stores HTTP m
 | Method | Path | Behavior |
 |---|---|---|
 | `GET` | `/health` | Returns `{"status":"ok"}` |
+| `GET` | `/ready` | Returns `{"status":"ready"}` when PostgreSQL and Redis respond within one second, otherwise `503` with `{"status":"not_ready"}` |
 | `POST` | `/monitors` | Creates a monitor; returns `201` and its representation |
 | `GET` | `/monitors` | Lists monitors |
 | `GET` | `/monitors/{id}` | Retrieves a monitor |
@@ -53,7 +54,7 @@ Monitor JSON fields are `id`, `name`, `url`, `interval_seconds`, `timeout_second
 
 ## Not implemented yet
 
-Durable notification delivery and retries, authentication/ownership, time-weighted uptime, check execution retries, readiness checks, metrics, structured logging, production configuration, and complete SSRF defenses are future work. A Discord failure does not undo a persisted check or incident transition; the error is reported to the worker and that notification may be missed. The scheduler retries scheduling errors on its next tick, and workers back off after dequeue errors. Runtime connection/listen settings and worker count can be set through environment variables. The monitor constructor checks that name/URL are nonempty, interval/timeout are positive, and expected status is in the HTTP status range; URL safety checks run in the checker before dialing.
+Durable notification delivery and retries, authentication/ownership, time-weighted uptime, check execution retries, metrics, structured logging, production configuration, and complete SSRF defenses are future work. `/ready` checks connection health, not migration state or actual scheduler and worker progress. A Discord failure does not undo a persisted check or incident transition; the error is reported to the worker and that notification may be missed. The scheduler retries scheduling errors on its next tick, and workers back off after dequeue errors. Runtime connection/listen settings and worker count can be set through environment variables. The monitor constructor checks that name/URL are nonempty, interval/timeout are positive, and expected status is in the HTTP status range; URL safety checks run in the checker before dialing.
 
 ## Principles and non-goals
 

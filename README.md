@@ -221,7 +221,8 @@ Horus records the result as an HTTP failure:
 
 | Method   | Endpoint                 | Description       |
 | -------- | ------------------------ | ----------------- |
-| `GET`    | `/health`                | Health check      |
+| `GET`    | `/health`                | Process liveness check |
+| `GET`    | `/ready`                 | PostgreSQL and Redis readiness check |
 | `POST`   | `/monitors`              | Create a monitor  |
 | `GET`    | `/monitors`              | List monitors     |
 | `GET`    | `/monitors/{id}`         | Get a monitor     |

@@ -46,13 +46,14 @@ The code is organized by responsibility: `api`, `check`, `config`, `database`, `
 
 ### Runtime/API
 
-- `GET /health` returns a basic `{"status":"ok"}` response.
+- `GET /health` is process liveness and returns `{"status":"ok"}` without checking dependencies. `GET /ready` pings the existing PostgreSQL pool and Redis client with a shared one-second deadline, returning `200 {"status":"ready"}` when both respond or `503 {"status":"not_ready"}` otherwise. Responses contain no raw dependency errors.
 - PostgreSQL 17 and Redis 8 are available through `compose.yaml`.
 
 ## Routes
 
 ```text
 GET    /health
+GET    /ready
 POST   /monitors
 GET    /monitors
 GET    /monitors/{id}
@@ -71,7 +72,7 @@ GET    /monitors/{id}/incidents/current
 - No user accounts, authentication, authorization, or monitor ownership.
 - The checker accepts only absolute HTTP/HTTPS URLs without embedded credentials, rejects non-public DNS results at connection time, and does not follow redirects. Other SSRF edge cases should continue to be reviewed as the service is hardened.
 - No check execution retries, duplicate-job protection, or queue recovery/dead-letter handling. Scheduling errors are retried on the next tick, and workers back off after dequeue errors. If enqueue succeeds but updating `next_check_at` fails, a later tick can enqueue the same monitor again.
-- No readiness endpoint, metrics, structured logging, production configuration, or container image for Horus. `/health` reports that the HTTP process is serving requests; it does not verify that scheduling, PostgreSQL, or Redis are healthy.
+- No metrics, structured logging, production configuration, or container image for Horus. `/ready` checks dependency connectivity, not migration state, scheduler progress, worker activity, or queue delivery.
 - PostgreSQL/Redis addresses and credentials, HTTP listen address, worker count, and optional Discord webhook are configurable through `HORUS_DB_HOST`, `HORUS_DB_PORT`, `HORUS_DB_USER`, `HORUS_DB_PASSWORD`, `HORUS_DB_NAME`, `HORUS_REDIS_HOST`, `HORUS_REDIS_PORT`, `HORUS_HTTP_ADDR`, `HORUS_WORKER_COUNT`, and `HORUS_DISCORD_WEBHOOK_URL`. Local Compose-compatible defaults are used when unset; migrations must still be applied manually.
 - Monitor enable/disable and delete handlers do not distinguish a missing ID from a successful update/delete.
 - Checker uses `http.DefaultClient`; status mismatch is checked against one exact expected status.
@@ -82,6 +83,8 @@ The repository includes unit/API tests and PostgreSQL/Redis-backed repository an
 
 Discord configuration investigation confirmed that the running process lacked `HORUS_DISCORD_WEBHOOK_URL` even though `.env` contained it. Configuration and startup-wiring tests now cover this boundary, and notification tests cover secret-safe request errors. Focused config/check/notification tests, `go test ./...`, `go vet ./...`, `go build ./...`, and `git diff --check` passed. A manual run with a temporary PostgreSQL database and isolated Redis reproduced disabled delivery, then verified one DOWN across three failed HTTP 500 checks and one RECOVERED across two successful HTTP 200 checks. A local observation relay forwarded the configured notifications to Discord and recorded HTTP 204 for each. Temporary services/data were removed. The application still requires settings to be exported before startup.
 
+For liveness and readiness, focused server and Redis tests, `go test ./...`, `go vet ./...`, `go build ./...`, and `git diff --check` passed with local PostgreSQL and Redis. Tests cover all dependency success/failure combinations, safe 503 responses, liveness after Redis failure, a one-second handler deadline, and a Redis client ping against a stalled TCP listener.
+
 ## Next work
 
-Continue production hardening with authentication/authorization, queue recovery, readiness and operational telemetry. Durable notification delivery remains future work.
+Continue production hardening with authentication/authorization, queue recovery, and operational telemetry. Durable notification delivery remains future work.

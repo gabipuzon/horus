@@ -17,6 +17,7 @@ Current routes are:
 
 ```text
 GET    /health
+GET    /ready
 POST   /monitors
 GET    /monitors
 GET    /monitors/{id}
