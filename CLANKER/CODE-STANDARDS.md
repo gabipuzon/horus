@@ -38,6 +38,7 @@ Handler-produced errors use the shared `writeError` helper: `application/json` w
 
 ## Persistence and reliability
 
+- Read runtime settings from `HORUS_*` process environment variables in `internal/config`; Go binaries do not load `.env`. Keep direct-run defaults local, validate blank required fields, ports, worker count, and configured Discord URLs without echoing secret values in errors or startup state logs. The server requires PostgreSQL and Redis during startup. Keep `/health` free of dependency checks and `/ready` bounded by its shared one-second context deadline.
 - PostgreSQL repositories use parameterized queries and receive request/job context.
 - Schema changes belong in ordered SQL files under `migrations/`. `cmd/migrate` embeds and applies pending versions transactionally; Compose runs it before the server. The server does not migrate at startup.
 - PostgreSQL holds durable monitor, check, and incident state; Redis currently carries jobs on `horus:checks`. Discord notifications are optional and sent after incident transitions. Delivery errors must not undo persisted state.

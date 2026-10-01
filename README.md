@@ -86,8 +86,12 @@ Compose starts PostgreSQL and Redis, waits for both to be healthy, applies pendi
 SQL migrations, then starts Horus. The migration job records completed versions in
 `schema_migrations`; later starts skip them. A failed migration prevents Horus from
 starting. PostgreSQL data lives in the named `postgres_data` volume and survives
-normal restarts. Open `http://localhost:8080` for the API. `GET /health` checks
-process liveness; `GET /ready` checks PostgreSQL and Redis connectivity.
+normal restarts. Open `http://localhost:8080` for the API. `GET /health` returns
+`200 {"status":"ok"}` for process liveness without checking dependencies.
+`GET /ready` gives PostgreSQL and Redis a shared one-second deadline: both
+reachable returns `200 {"status":"ready"}`; either unavailable returns
+`503 {"status":"not_ready"}` without dependency error details. Readiness
+checks connectivity, not scheduler or worker progress.
 Databases initialized manually before `schema_migrations` need an explicit
 migration baseline; the command does not infer completed versions from tables.
 
@@ -117,11 +121,41 @@ go run ./cmd/server
 
 `cmd/migrate` is safe to run again: it applies only unrecorded SQL migrations.
 Horus itself does not load `.env`; export it as shown or set `HORUS_*` variables
-through your process environment. Run tests with:
+through your process environment. Horus requires PostgreSQL and Redis at
+startup and exits if either initial connection check fails. The server does
+not run migrations itself; run `cmd/migrate` first when starting Go directly.
+Run tests with:
 
 ```bash
 go test ./...
 ```
+
+The following settings are read from the process environment. Unset values use
+the local development defaults shown here. Blank host, user, database name,
+HTTP address, and port values are rejected; ports must be 1–65535. A blank
+database password is allowed only if the PostgreSQL server permits it.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `HORUS_DB_HOST` | `localhost` | PostgreSQL host |
+| `HORUS_DB_PORT` | `5432` | PostgreSQL port |
+| `HORUS_DB_USER` | `horus` | PostgreSQL user |
+| `HORUS_DB_PASSWORD` | `horus` | PostgreSQL password |
+| `HORUS_DB_NAME` | `horus` | PostgreSQL database |
+| `HORUS_REDIS_HOST` | `localhost` | Redis host |
+| `HORUS_REDIS_PORT` | `6379` | Redis port |
+| `HORUS_HTTP_ADDR` | `:8080` | Horus listen address |
+| `HORUS_WORKER_COUNT` | `3` | Worker count, 1–1000 |
+| `HORUS_DISCORD_WEBHOOK_URL` | empty | Optional absolute HTTP(S) webhook URL; empty disables notifications |
+
+Compose uses the same database credentials but sets the container hosts to
+`postgres` and `redis` and their internal ports to `5432` and `6379`. The
+`HORUS_*_PUBLISH_PORT` values in `.env.example` change host-side Compose ports,
+not the process configuration inside containers.
+
+SIGINT or SIGTERM cancels the scheduler and workers. Idle Redis dequeues wake
+within their one-second blocking interval to observe cancellation. Horus joins
+the workers, then gives the HTTP server up to five seconds to shut down.
 
 ### Optional Discord notifications
 

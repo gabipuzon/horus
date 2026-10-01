@@ -30,12 +30,14 @@ Horus is a self-hosted uptime monitoring service written in Go. It stores HTTP m
 ### Runtime
 
 - Expose `/health` for process liveness and `/ready` for PostgreSQL and Redis connectivity readiness.
+- Keep `/health` independent of dependencies; `/ready` uses a shared one-second deadline and returns `503` when either dependency is unavailable. Initial PostgreSQL and Redis checks are required before Horus starts serving.
 - Handle interrupt/SIGTERM and shut down workers and the HTTP server; idle Redis dequeues use a bounded wait so cancellation can complete promptly.
 - Configure optional Discord notifications with `HORUS_DISCORD_WEBHOOK_URL`; Horus starts normally when it is unset.
 - Build a multi-stage, non-root Horus image with CA certificates. Compose starts PostgreSQL, Redis, migrations, then Horus; PostgreSQL data persists in a named volume.
 - Run `cmd/migrate` to apply pending numbered SQL migrations transactionally; successful versions are recorded in `schema_migrations`.
 - Use GitHub Actions CI to apply migrations against fresh PostgreSQL and Redis services, then run Go tests, race tests, vet, Go build, and Docker build on pushes and pull requests.
 - Export settings into the process environment before starting Go directly; the binaries do not load `.env` automatically. Compose reads `.env` for substitution. Startup logs whether Discord is enabled, without printing its webhook URL. Only new incident transitions notify; existing incidents are not replayed after enabling notifications.
+- Direct-run defaults use local PostgreSQL/Redis, HTTP `:8080`, and three workers. Config validates required connection fields, ports, worker count (1–1000), and nonblank Discord URLs; a blank webhook disables notifications.
 
 ## API
 
