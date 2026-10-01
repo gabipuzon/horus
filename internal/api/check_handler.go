@@ -33,11 +33,11 @@ type monitorExistenceRepository interface {
 func requireMonitor(w http.ResponseWriter, r *http.Request, repository monitorExistenceRepository) bool {
 	exists, err := repository.Exists(r.Context(), r.PathValue("id"))
 	if err != nil {
-		http.Error(w, "failed to find monitor", http.StatusInternalServerError)
+		writeInternalError(w, "find monitor", err)
 		return false
 	}
 	if !exists {
-		http.Error(w, "monitor not found", http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "monitor not found")
 		return false
 	}
 	return true
@@ -107,7 +107,7 @@ func (h *CheckHandler) ListByMonitor(
 	if query.Has("limit") {
 		parsed, err := strconv.Atoi(query.Get("limit"))
 		if err != nil || parsed < 1 || parsed > 100 {
-			http.Error(w, "limit must be between 1 and 100", http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, "limit must be between 1 and 100")
 			return
 		}
 		limit = parsed
@@ -116,7 +116,7 @@ func (h *CheckHandler) ListByMonitor(
 	if query.Has("offset") {
 		parsed, err := strconv.Atoi(query.Get("offset"))
 		if err != nil || parsed < 0 {
-			http.Error(w, "offset must not be negative", http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, "offset must not be negative")
 			return
 		}
 		offset = parsed
@@ -132,11 +132,7 @@ func (h *CheckHandler) ListByMonitor(
 		offset,
 	)
 	if err != nil {
-		http.Error(
-			w,
-			"failed to list checks",
-			http.StatusInternalServerError,
-		)
+		writeInternalError(w, "list checks", err)
 		return
 	}
 
@@ -149,12 +145,7 @@ func (h *CheckHandler) ListByMonitor(
 	w.Header().Set("Content-Type", "application/json")
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		http.Error(
-			w,
-			"failed to encode response",
-			http.StatusInternalServerError,
-		)
-		return
+		logResponseWriteError("list checks", err)
 	}
 }
 
@@ -172,11 +163,7 @@ func (h *CheckHandler) GetSummary(
 		monitorID,
 	)
 	if err != nil {
-		http.Error(
-			w,
-			"failed to get check summary",
-			http.StatusInternalServerError,
-		)
+		writeInternalError(w, "get check summary", err)
 		return
 	}
 
@@ -192,11 +179,6 @@ func (h *CheckHandler) GetSummary(
 	w.Header().Set("Content-Type", "application/json")
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		http.Error(
-			w,
-			"failed to encode response",
-			http.StatusInternalServerError,
-		)
-		return
+		logResponseWriteError("get check summary", err)
 	}
 }

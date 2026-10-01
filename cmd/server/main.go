@@ -39,12 +39,7 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		http.Error(
-			w,
-			"failed to encode response",
-			http.StatusInternalServerError,
-		)
-		return
+		log.Printf("failed to write liveness response (%T)", err)
 	}
 }
 
@@ -65,7 +60,7 @@ func readyHandler(postgres, redis dependencyPinger) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
 		if err := json.NewEncoder(w).Encode(response); err != nil {
-			log.Printf("failed to encode readiness response: %v", err)
+			log.Printf("failed to write readiness response (%T)", err)
 		}
 	}
 }

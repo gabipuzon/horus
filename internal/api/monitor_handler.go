@@ -64,18 +64,18 @@ func (h *MonitorHandler) Create(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&request); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 	var extra any
 	if err := decoder.Decode(&extra); err != io.EOF {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 	// The schema stores these values as signed 32-bit seconds, and this bound
 	// also keeps the conversion to time.Duration from overflowing.
 	if request.Interval > 1<<31-1 || request.Timeout > 1<<31-1 {
-		http.Error(w, "monitor interval or timeout is too large", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "monitor interval or timeout is too large")
 		return
 	}
 
@@ -87,12 +87,12 @@ func (h *MonitorHandler) Create(w http.ResponseWriter, r *http.Request) {
 		request.ExpectedStatus,
 	)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	if err := h.repository.Create(r.Context(), m); err != nil {
-		http.Error(w, "failed to create monitor", http.StatusInternalServerError)
+		writeInternalError(w, "create monitor", err)
 		return
 	}
 
@@ -102,15 +102,14 @@ func (h *MonitorHandler) Create(w http.ResponseWriter, r *http.Request) {
 	response := newMonitorResponse(m)
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		http.Error(w, "failed to encode response", http.StatusInternalServerError)
-		return
+		logResponseWriteError("create monitor", err)
 	}
 }
 
 func (h *MonitorHandler) List(w http.ResponseWriter, r *http.Request) {
 	monitors, err := h.repository.List(r.Context())
 	if err != nil {
-		http.Error(w, "failed to list monitors", http.StatusInternalServerError)
+		writeInternalError(w, "list monitors", err)
 		return
 	}
 
@@ -123,8 +122,7 @@ func (h *MonitorHandler) List(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		http.Error(w, "failed to encode response", http.StatusInternalServerError)
-		return
+		logResponseWriteError("list monitors", err)
 	}
 }
 
@@ -140,8 +138,7 @@ func (h *MonitorHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	if err := json.NewEncoder(w).Encode(newMonitorResponse(m)); err != nil {
-		http.Error(w, "failed to encode response", http.StatusInternalServerError)
-		return
+		logResponseWriteError("get monitor", err)
 	}
 }
 
@@ -178,10 +175,10 @@ func (h *MonitorHandler) Disable(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func writeMonitorError(w http.ResponseWriter, err error, internalMessage string) {
+func writeMonitorError(w http.ResponseWriter, err error, operation string) {
 	if errors.Is(err, monitor.ErrNotFound) {
-		http.Error(w, "monitor not found", http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "monitor not found")
 		return
 	}
-	http.Error(w, internalMessage, http.StatusInternalServerError)
+	writeInternalError(w, operation, err)
 }

@@ -100,6 +100,13 @@ func TestListChecksPagination(t *testing.T) {
 			} else if repository.listCalls != 0 {
 				t.Fatal("invalid pagination should not query checks")
 			}
+			if test.wantStatus == http.StatusBadRequest {
+				message := "limit must be between 1 and 100"
+				if strings.Contains(test.name, "offset") {
+					message = "offset must not be negative"
+				}
+				assertJSONError(t, recorder, http.StatusBadRequest, message)
+			}
 		})
 	}
 }
@@ -492,9 +499,11 @@ func TestCheckEndpointsRequireExistingMonitor(t *testing.T) {
 				request.SetPathValue("id", id)
 				recorder := httptest.NewRecorder()
 				endpoint.serve(recorder, request)
-				if recorder.Code != test.want {
-					t.Fatalf("%s: expected %d, got %d", endpoint.path, test.want, recorder.Code)
+				message := "monitor not found"
+				if test.want == http.StatusInternalServerError {
+					message = "internal server error"
 				}
+				assertJSONError(t, recorder, test.want, message)
 			}
 		})
 	}
@@ -517,8 +526,6 @@ func TestCheckEndpointsHideRepositoryErrors(t *testing.T) {
 		request.SetPathValue("id", "monitor-1")
 		recorder := httptest.NewRecorder()
 		endpoint.serve(recorder, request)
-		if recorder.Code != http.StatusInternalServerError || strings.Contains(recorder.Body.String(), "secret") {
-			t.Fatalf("%s: expected safe 500, got %d %q", endpoint.path, recorder.Code, recorder.Body.String())
-		}
+		assertJSONError(t, recorder, http.StatusInternalServerError, "internal server error")
 	}
 }

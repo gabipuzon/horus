@@ -84,7 +84,7 @@ func incidentPagination(r *http.Request) (int, int, bool) {
 func (h *IncidentHandler) ListByMonitor(w http.ResponseWriter, r *http.Request) {
 	limit, offset, valid := incidentPagination(r)
 	if !valid {
-		http.Error(w, "invalid limit or offset", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid limit or offset")
 		return
 	}
 	if !requireMonitor(w, r, h.monitors) {
@@ -93,7 +93,7 @@ func (h *IncidentHandler) ListByMonitor(w http.ResponseWriter, r *http.Request) 
 
 	values, err := h.repository.ListByMonitor(r.Context(), r.PathValue("id"), limit, offset)
 	if err != nil {
-		http.Error(w, "failed to list incidents", http.StatusInternalServerError)
+		writeInternalError(w, "list incidents", err)
 		return
 	}
 	response := make([]incidentResponse, 0, len(values))
@@ -103,7 +103,7 @@ func (h *IncidentHandler) ListByMonitor(w http.ResponseWriter, r *http.Request) 
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		logResponseWriteError("list incidents", err)
 	}
 }
 
@@ -113,7 +113,7 @@ func (h *IncidentHandler) GetCurrent(w http.ResponseWriter, r *http.Request) {
 	}
 	value, err := h.repository.GetOpenByMonitor(r.Context(), r.PathValue("id"))
 	if err != nil {
-		http.Error(w, "failed to get current incident", http.StatusInternalServerError)
+		writeInternalError(w, "get current incident", err)
 		return
 	}
 	if value == nil {
@@ -122,6 +122,6 @@ func (h *IncidentHandler) GetCurrent(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(newIncidentResponse(*value, time.Now())); err != nil {
-		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		logResponseWriteError("get current incident", err)
 	}
 }
