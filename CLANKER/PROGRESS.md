@@ -27,7 +27,7 @@ The code is organized by responsibility: `api`, `check`, `config`, `database`, `
 - At most one open incident per monitor is enforced by a partial unique index. Repeated failures leave the existing incident and its initial failure context unchanged; a successful check resolves it.
 - Check results are persisted before incident transitions. If a transition fails, the check remains stored and the check service returns an explicit transition error.
 - Migration `004_create_incidents.sql` adds incident storage and indexes. `cmd/migrate` now applies numbered SQL migrations transactionally and records completed versions in `schema_migrations`.
-- Incident history is paginated newest first. The current incident endpoint returns the open incident or `204` when none is open. Responses include timestamps, open state, initial failure context, and elapsed or resolved duration in milliseconds.
+- Incident history uses strict `limit` 1–100 (default 50) and nonnegative `offset` (default 0), orders by start time then ID descending, and returns `200 []` when empty. The current incident endpoint returns only the open incident or an empty `204` when none is open. Both routes return `404` for missing or malformed monitor IDs. Responses include timestamps, open state, initial failure context, and elapsed or fixed resolved duration in milliseconds, clamped to zero if negative.
 
 ### Discord notifications
 
@@ -47,6 +47,7 @@ The code is organized by responsibility: `api`, `check`, `config`, `database`, `
 ### Runtime/API
 
 - `GET /health` is process liveness and returns `{"status":"ok"}` without checking dependencies. `GET /ready` pings the existing PostgreSQL pool and Redis client with a shared one-second deadline, returning `200 {"status":"ready"}` when both respond or `503 {"status":"not_ready"}` otherwise. Responses contain no raw dependency errors.
+- Handler-produced monitor, check, and incident errors use `application/json` with one `error` string. Safe request errors remain `400`, missing or malformed monitor IDs remain `404`, and internal repository failures return a generic `500` while logging operation and error type. The readiness `503` status response and Go mux defaults remain separate conventions.
 - A multi-stage Dockerfile builds the server and migration binaries; the runtime image uses CA certificates and a non-root user.
 - Compose starts PostgreSQL 17 and Redis 8 with healthchecks, runs migrations after PostgreSQL becomes healthy, then starts Horus after Redis is healthy and migrations succeed. Horus container health uses `/ready`.
 - Compose keeps PostgreSQL data in the `postgres_data` named volume. It reads local `.env` for variable substitution and sets `postgres`/`redis` service hostnames inside containers; the Go binaries still read only process environment variables.
@@ -84,6 +85,7 @@ GET    /monitors/{id}/incidents/current
 - PostgreSQL/Redis addresses and credentials, HTTP listen address, worker count, and optional Discord webhook are configurable through `HORUS_DB_HOST`, `HORUS_DB_PORT`, `HORUS_DB_USER`, `HORUS_DB_PASSWORD`, `HORUS_DB_NAME`, `HORUS_REDIS_HOST`, `HORUS_REDIS_PORT`, `HORUS_HTTP_ADDR`, `HORUS_WORKER_COUNT`, and `HORUS_DISCORD_WEBHOOK_URL`. Local Compose-compatible defaults are used when unset. Legacy schemas created manually before `schema_migrations` need an explicit baseline or fresh volume; migrations are not inferred from existing tables.
 - Checker uses `http.DefaultClient`; status mismatch is checked against one exact expected status.
 - Offset-based check history pages can shift when new checks arrive between requests.
+- Offset-based incident history pages can shift when incidents open between requests.
 
 ## Verification record
 
@@ -101,6 +103,10 @@ For Phase 8A, monitor API and domain tests cover strict creation input, URL and 
 
 For Phase 8B, API tests cover strict pagination, empty history and summary responses, missing and malformed monitor IDs, and safe repository errors. PostgreSQL integration tests cover empty, successful, failed, and mixed check sets; pagination and timestamp ties; nullable failure fields; latest status; and integer-millisecond average latency. `go test ./internal/api/...`, `go test ./internal/postgres/...`, `go test ./...`, `go test -race ./...`, `go vet ./...`, `go build ./...`, and `git diff --check` passed with local services.
 
+For Phase 8C, API tests cover pagination defaults and invalid values, empty history and current responses, missing and malformed monitor IDs, safe dependency errors, and open/resolved duration behavior. PostgreSQL integration tests cover timestamp ties, stable pages, open-only current reads, nullable resolution, default failure context, and preservation of initial context. The existing incident handlers and SQL already satisfied these semantics, so no production code or schema changes were needed. `go test ./internal/api/...`, `go test ./internal/postgres/...`, `go test ./...`, `go test -race ./...`, `go vet ./...`, `go build ./...`, and `git diff --check` passed with local services.
+
+For Phase 8D, focused handler tests cover JSON `400`, `404`, and generic `500` responses, content type, preservation of useful validation messages, and omission of sensitive repository text from both client responses and diagnostic logs. Existing readiness tests cover the deliberate `503` status response. `go test ./internal/api/...`, `go test ./cmd/server/...`, `go test ./...`, `go test -race ./...`, `go vet ./...`, and `go build ./...` passed with local services. The initial sandboxed server test attempt could not open local sockets; the same test passed outside the sandbox.
+
 ## Next work
 
-Phase 8A monitor API semantics and Phase 8B check history/summary semantics are implemented. Phase 8C incident API polish is next. Authentication/authorization, queue recovery, telemetry, and durable notification delivery remain future work.
+Phase 8A monitor API, Phase 8B check history/summary, Phase 8C incident API semantics, and Phase 8D handler error consistency are implemented. Phase 8E runtime/config polish is next. Authentication/authorization, queue recovery, telemetry, and durable notification delivery remain future work.

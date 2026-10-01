@@ -238,6 +238,30 @@ newest check; 0 means that check received no HTTP response. For an existing
 monitor with no checks, all count, latency, and status fields are 0 and
 `uptime_percentage` is `null`. A missing or malformed monitor ID returns `404`.
 
+## Viewing Incidents
+
+```bash
+curl "http://localhost:8080/monitors/MONITOR_ID/incidents?limit=20&offset=0"
+curl http://localhost:8080/monitors/MONITOR_ID/incidents/current
+```
+
+History returns the newest incident first by `started_at`, with incident ID
+breaking timestamp ties. `limit` defaults to 50 and must be 1–100; `offset`
+defaults to 0 and must be nonnegative. Invalid or empty pagination values
+return `400`. An existing monitor with no incidents returns `200` and `[]`.
+The current route returns the open incident with `200`, or `204 No Content`
+with an empty body if none is open. Both routes return `404` for a missing or
+malformed monitor ID.
+
+Incident responses include `id`, `monitor_id`, `started_at`, `resolved_at`,
+`is_open`, `duration_ms`, `failure_type`, and `status_code`. The initial
+`failure_message` appears when present. An open incident has `resolved_at: null`
+and `duration_ms` measures elapsed time from its start to the response. A
+resolved incident's duration is fixed at `resolved_at - started_at`. Negative
+durations are reported as 0. Status 0 means no HTTP response was recorded for
+the initial failure. Repeated failed checks keep the same incident and its
+initial failure context.
+
 ## Testing Failure Detection
 
 Horus considers a check successful when the returned HTTP status matches the configured expected status.
@@ -286,6 +310,8 @@ Horus records the result as an HTTP failure:
 | `PATCH`  | `/monitors/{id}/disable` | Disable a monitor (`204`; missing or malformed ID `404`) |
 | `GET`    | `/monitors/{id}/checks`  | Get check history |
 | `GET`    | `/monitors/{id}/summary` | Get check summary |
+
+Errors produced by Horus API handlers use `Content-Type: application/json` and a single field, for example `{"error":"monitor not found"}`. Invalid JSON, monitor values, or pagination return `400` with a useful message. Missing monitors and malformed monitor IDs return `404`. Unexpected repository failures return `500` with `{"error":"internal server error"}`; internal details are not sent to clients. `/ready` is an operational exception: dependency failure returns `503` with `{"status":"not_ready"}`. Go's default `ServeMux` handles unsupported paths and methods.
 
 ## Project Structure
 

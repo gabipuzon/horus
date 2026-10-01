@@ -24,7 +24,7 @@ Horus is a self-hosted uptime monitoring service written in Go. It stores HTTP m
 ### Incidents
 
 - Open one incident when a monitor fails, keep it open through repeated failures, and resolve it after a successful check.
-- Store outage start, optional resolution, and initial failure context in PostgreSQL. Expose paginated incident history and the current open incident, including elapsed or resolved duration.
+- Store outage start, optional resolution, and initial failure context in PostgreSQL. Expose incident history newest first with stable ID tie-breaking and strict limit/offset pagination; an empty history is `[]`. The current route returns only an open incident, or an empty `204`. Durations are elapsed for open incidents and fixed for resolved incidents.
 - Optionally send DOWN and RECOVERED Discord webhook messages when incidents open or resolve. Repeated failed checks and ordinary successful checks do not send notifications.
 
 ### Runtime
@@ -51,10 +51,12 @@ Horus is a self-hosted uptime monitoring service written in Go. It stores HTTP m
 | `PATCH` | `/monitors/{id}/disable` | Disables a monitor; returns `204` |
 | `GET` | `/monitors/{id}/checks` | Lists newest checks; `limit` defaults to 50 and must be 1–100, `offset` defaults to 0 and must be nonnegative; invalid values return `400` |
 | `GET` | `/monitors/{id}/summary` | Returns check counts, average latency in whole milliseconds, latest status code, and check-based uptime percentage |
-| `GET` | `/monitors/{id}/incidents` | Lists incidents newest first with `limit` (1–100, default 50) and nonnegative `offset` (default 0) |
-| `GET` | `/monitors/{id}/incidents/current` | Returns the open incident, or `204` when none is open |
+| `GET` | `/monitors/{id}/incidents` | Lists incidents newest first; `limit` defaults to 50 and must be 1–100, `offset` defaults to 0 and must be nonnegative; invalid values return `400` |
+| `GET` | `/monitors/{id}/incidents/current` | Returns only the open incident, or an empty `204` when none is open |
 
-Monitor JSON fields are `id`, `name`, `url`, `interval_seconds`, `timeout_seconds`, `expected_status`, and `enabled`. Check rows include `id`, `monitor_id`, `status_code`, `latency_ms`, `success`, `failure_type`, optional `error`, and RFC3339 `checked_at`; 0 status means no HTTP response. Summary fields are `total_checks`, `successful_checks`, `failed_checks`, `average_latency_ms`, `latest_status`, and `uptime_percentage`. The percentage is `successful_checks / total_checks × 100`, rounded to two decimals; it is `null` with no checks and is not time weighted. The average latency is truncated to whole milliseconds, and latest status 0 means no HTTP response on the newest check or no checks. Incident rows include start and optional resolution timestamps, `is_open`, `duration_ms`, and initial failure context. Open duration is elapsed at response time; resolved duration ends at `resolved_at`. Missing monitors return `404` on check and incident data routes; malformed UUIDs also return `404` on check routes.
+Monitor JSON fields are `id`, `name`, `url`, `interval_seconds`, `timeout_seconds`, `expected_status`, and `enabled`. Check rows include `id`, `monitor_id`, `status_code`, `latency_ms`, `success`, `failure_type`, optional `error`, and RFC3339 `checked_at`; 0 status means no HTTP response. Summary fields are `total_checks`, `successful_checks`, `failed_checks`, `average_latency_ms`, `latest_status`, and `uptime_percentage`. The percentage is `successful_checks / total_checks × 100`, rounded to two decimals; it is `null` with no checks and is not time weighted. The average latency is truncated to whole milliseconds, and latest status 0 means no HTTP response on the newest check or no checks. Incident rows include start and optional resolution timestamps, `is_open`, `duration_ms`, and initial failure context. Open duration is elapsed at response time; resolved duration ends at `resolved_at`. Missing or malformed monitor IDs return `404` on check and incident data routes.
+
+Horus handler errors use JSON `{"error":"..."}`: invalid requests return `400`, missing or malformed monitor IDs return `404`, and unexpected internal failures return a generic `500`. `/ready` retains its `503 {"status":"not_ready"}` dependency response. Unsupported routes and methods use Go's default mux responses.
 
 ## Not implemented yet
 
