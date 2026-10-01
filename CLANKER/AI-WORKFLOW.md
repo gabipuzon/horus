@@ -16,6 +16,7 @@
 - `.github/workflows/ci.yml` runs against fresh PostgreSQL and Redis services: migrate, test, race test, vet, Go build, and Docker build. Keep automated tests independent of public websites and Discord secrets.
 - Review the final diff and keep changes within the requested scope.
 - For frontend changes, follow `UI-CONTEXT.md`, keep requests in the typed API client, and run the `web/` npm test, build, and lint scripts. Vite proxies same-origin `/api` requests to local Horus; start Horus before browser smoke testing.
+- Detail screens should keep metadata, summary, checks, and incident queries independent so a section failure remains local. Check `204` current-incident and no-check summary states against the backend contract.
 
 ## Documentation
 

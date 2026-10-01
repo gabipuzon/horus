@@ -259,7 +259,8 @@ npm ci
 npm run dev
 ```
 
-Open `http://localhost:5173/monitors`. The frontend defaults to same-origin
+Open `http://localhost:5173/monitors`. Select a monitor name to open
+`/monitors/:id` for its summary, response times, checks, and incidents. The frontend defaults to same-origin
 `/api` requests; Vite proxies those requests to `http://localhost:8080` and
 removes `/api` before forwarding. Set `VITE_HORUS_API_URL` to an absolute API
 origin only when that origin explicitly allows the browser's frontend origin.
@@ -315,6 +316,6 @@ and Docker build. It does not deploy or publish an image.
 ## Project Status
 
 The backend v1 flow is implemented and covered by Go tests and local Compose
-verification. The Phase 9A monitor frontend is implemented as a separate Vite
-development app. Monitor detail, checks, summary, incident screens, frontend
-deployment, authentication, and metrics are not implemented.
+verification. The Phase 9A list and Phase 9B detail are implemented as a
+separate Vite development app. Overview, global incidents, frontend deployment,
+authentication, and telemetry remain unimplemented.

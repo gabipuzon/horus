@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Power, Trash2 } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { Button } from '../../components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../../components/ui/dialog'
 import { monitorApi, type Monitor } from './api'
@@ -22,7 +23,7 @@ export function MonitorRow({ monitor, onChanged }: { monitor: Monitor; onChanged
   return <>
     <tr className={`border-b border-border/75 last:border-0 hover:bg-surface-raised/35 ${monitor.enabled ? '' : 'text-muted-foreground'}`}>
       <td className="whitespace-nowrap px-5 py-3.5"><span className="inline-flex items-center gap-2 text-xs font-medium tracking-wide"><span aria-hidden="true" className={`text-base leading-none ${monitor.enabled ? 'text-muted-foreground' : 'text-status-disabled'}`}>{monitor.enabled ? '●' : '○'}</span>{monitor.enabled ? 'ENABLED' : 'DISABLED'}</span></td>
-      <td className="max-w-48 truncate px-5 py-3.5 font-medium text-foreground" title={monitor.name}>{monitor.name}</td>
+      <td className="max-w-48 truncate px-5 py-3.5 font-medium text-foreground" title={monitor.name}><Link className="rounded text-foreground hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent" to={`/monitors/${monitor.id}`}>{monitor.name}</Link></td>
       <td className="max-w-72 truncate px-5 py-3.5 font-mono text-xs text-muted-foreground" title={monitor.url}>{monitor.url}</td>
       <td className="whitespace-nowrap px-5 py-3.5 text-right tabular-nums">{monitor.interval_seconds} s</td>
       <td className="whitespace-nowrap px-5 py-3.5 text-right tabular-nums">{monitor.timeout_seconds} s</td>

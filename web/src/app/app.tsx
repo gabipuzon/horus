@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Activity, ListChecks } from 'lucide-react'
 import { BrowserRouter, NavLink, Navigate, Route, Routes } from 'react-router-dom'
 import { MonitorPage } from '../routes/monitor-page'
+import { MonitorDetailPage } from '../routes/monitor-detail-page'
 
 export function App({ queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 10_000 } } }) }: { queryClient?: QueryClient }) {
   return (
@@ -25,6 +26,7 @@ export function App({ queryClient = new QueryClient({ defaultOptions: { queries:
               <Routes>
                 <Route path="/" element={<Navigate to="/monitors" replace />} />
                 <Route path="/monitors" element={<MonitorPage />} />
+                <Route path="/monitors/:id" element={<MonitorDetailPage />} />
                 <Route path="*" element={<Navigate to="/monitors" replace />} />
               </Routes>
             </main>

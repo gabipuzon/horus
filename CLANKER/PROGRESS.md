@@ -4,7 +4,7 @@
 
 Horus has an end-to-end core monitoring flow: manage monitors over HTTP, schedule due checks, enqueue jobs in Redis, execute checks with a bounded worker pool, persist checks and incidents in PostgreSQL, and query check and incident data through the API.
 
-Phase 9A adds a separate frontend in `web/` for the monitor list and its creation, enable/disable, and delete flows. It shows enabled/disabled configuration state only; monitor detail, live health, checks, summary, and incident views are not built.
+Phase 9A adds a separate frontend in `web/` for monitor management. Phase 9B adds `/monitors/:id` with configuration, check-based summary, response-time chart, first-page checks, current incident, and first-page incident history. The list shows configuration state only. The detail route labels an open incident DOWN and does not infer health when no incident is open.
 
 The code is organized by responsibility: `api`, `check`, `config`, `database`, `incident`, `migrate`, `monitor`, `notification`, `postgres`, `queue`, `scheduler`, and `worker` packages under `internal/`.
 
@@ -124,6 +124,8 @@ For Phase 8F, the README was consolidated into a complete backend v1 entrypoint 
 
 For Phase 9A, frontend tests, TypeScript/production build, and ESLint passed in a Node 22 container. The final test run covered 15 tests across form validation and monitor-page interactions. The live Vite server served the `/monitors` page as HTML and proxied `/api/monitors` to the running Horus API. Headless Firefox screenshots were inspected at desktop and narrow widths; they captured the initial loading state. A manual click-through against the live backend is still pending.
 
+For Phase 9B, the detail page uses five typed endpoints and independent TanStack queries. It covers monitor 404, per-section skeletons and retries, no-check and no-incident states, semantic history tables, lightweight enable/disable and confirmed delete, and one responsive SVG latency line with failed-check markers. The page uses local time, shared relative/duration formatting, and no extra state library. All 24 frontend tests, build, and lint passed in the local Node 22 image; `git diff --check` passed. A live Horus smoke flow created a healthy monitor that recorded HTTP 200 checks and a populated summary, plus a failing expected-status monitor with failed HTTP checks and an open incident. Headless Firefox BiDi then loaded both detail routes and confirmed the rendered healthy summary/checks and failing DOWN/current-incident/failed-checks/history text. All temporary monitors were deleted. Recovery was not practical because the API has no monitor-edit route and the smoke target's response was fixed. The backend was unchanged.
+
 ## Next work
 
-Phases 8A–8F and 9A are complete. Phase 9B should add a monitor detail screen using persisted check, summary, and incident APIs, with honest loading and empty states. Authentication/authorization, queue recovery, telemetry, and durable notification delivery remain future work.
+Phases 8A–8F and 9A–9B are complete. Phase 9C could add the global Incidents view using the existing backend contract, if scoped and authorized separately. Overview, authentication/authorization, queue recovery, telemetry, and durable notification delivery remain future work.

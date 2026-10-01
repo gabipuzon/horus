@@ -28,6 +28,14 @@ describe('monitor dashboard', () => {
     expect(screen.queryByText('HEALTHY')).not.toBeInTheDocument()
   })
 
+  it('opens detail from the name while action buttons stay separate', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (path: string) => path === '/api/monitors' ? json([production]) : path.endsWith('/incidents/current') ? new Response(null, { status: 204 }) : path.endsWith('/summary') ? json({ total_checks: 0, successful_checks: 0, failed_checks: 0, average_latency_ms: 0, latest_status: 0, uptime_percentage: null }) : path.includes('/checks') || path.includes('/incidents') ? json([]) : json(production)))
+    showApp()
+    await userEvent.click(await screen.findByRole('link', { name: 'Production API' }))
+    expect(await screen.findByRole('heading', { name: 'Production API' })).toBeInTheDocument()
+    expect(window.location.pathname).toBe(`/monitors/${production.id}`)
+  })
+
   it('shows skeletons while the list loads', () => {
     vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})))
     showApp()
