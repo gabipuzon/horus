@@ -9,6 +9,7 @@
 - Keep Overview counts derived from `/monitors`. Bound any per-monitor current-incident scan (currently 12 monitors, concurrency three), label partial coverage, and show an active-incident count only when every monitor was checked successfully. Do not infer health from the enabled flag or add a global incident endpoint for the frontend.
 - Only render data the API actually supplies. Enabled/disabled is configuration, not an uptime or health result. Use labeled inputs, focus-visible styles, and Radix-backed dialogs.
 - Validate with `npm test`, `npm run build` (including TypeScript), and `npm run lint` from `web/`.
+- Production frontend changes belong in `web/Dockerfile` and `web/nginx.conf`: build assets in Node, serve through Nginx, preserve SPA fallback, and strip `/api` when proxying to Horus. Keep normal Compose browser traffic same-origin; do not require CORS. Compose host ports bind to loopback by default.
 
 These conventions describe the current Go code and preferred changes. Security and production features listed as future work should not be mistaken for protections already present.
 

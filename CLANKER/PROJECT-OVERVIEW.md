@@ -2,7 +2,7 @@
 
 ## Identity and purpose
 
-Horus is a self-hosted uptime monitoring service written in Go. It stores HTTP monitor configurations, schedules checks, records their outcomes, and serves monitoring data through an HTTP/JSON API. The repository currently implements the core monitoring path; it is not yet a full Pingdom-style product.
+Horus is a self-hosted uptime monitoring service with a Go API and React dashboard. It stores HTTP monitor configurations, schedules checks, records outcomes and incidents, and serves the v1 monitoring workflow through a production Compose stack.
 
 ## Implemented capabilities
 
@@ -11,6 +11,7 @@ Horus is a self-hosted uptime monitoring service written in Go. It stores HTTP m
 - `web/` contains a separate Vite/React/TypeScript monitor dashboard styled with Tailwind and local shadcn/ui style components, following `UI-CONTEXT.md`.
 - React Router redirects `/` to `/overview` and exposes `/overview`, `/monitors`, and `/monitors/:id`; TanStack Query and a typed fetch client load and mutate monitors. Overview shows configuration counts, a compact monitor list, and bounded current-incident checks. The list supports creation, enable/disable, confirmed deletion, and loading/empty/error feedback.
 - The list only reports enabled/disabled configuration. Detail shows configuration, check-based summary, a recent-latency chart, first-page checks, current incident, and first-page incident history. An open incident is DOWN; absence of an open incident is not presented as proven health.
+- A multi-stage frontend image builds static assets with Node and serves them through Nginx with SPA fallback. Nginx proxies same-origin `/api/*` requests to Horus. Compose provides `postgres`, `redis`, `migrate`, `horus`, and `web`; published host ports bind to loopback by default.
 
 ### Monitor management
 
@@ -39,9 +40,9 @@ Horus is a self-hosted uptime monitoring service written in Go. It stores HTTP m
 - Keep `/health` independent of dependencies; `/ready` uses a shared one-second deadline and returns `503` when either dependency is unavailable. Initial PostgreSQL and Redis checks are required before Horus starts serving.
 - Handle interrupt/SIGTERM and shut down workers and the HTTP server; idle Redis dequeues use a bounded wait so cancellation can complete promptly.
 - Configure optional Discord notifications with `HORUS_DISCORD_WEBHOOK_URL`; Horus starts normally when it is unset.
-- Build a multi-stage, non-root Horus image with CA certificates. Compose starts PostgreSQL, Redis, migrations, then Horus; PostgreSQL data persists in a named volume.
+- Build a multi-stage, non-root Horus image with CA certificates. Compose starts PostgreSQL, Redis, migrations, Horus, then web; PostgreSQL data persists in a named volume.
 - Run `cmd/migrate` to apply pending numbered SQL migrations transactionally; successful versions are recorded in `schema_migrations`.
-- Use GitHub Actions CI to apply migrations against fresh PostgreSQL and Redis services, then run Go tests, race tests, vet, Go build, and Docker build on pushes and pull requests.
+- Use GitHub Actions CI to apply migrations against fresh PostgreSQL and Redis services, run Go tests, race tests, vet, build, frontend tests/lint/build, and build both Docker images on pushes and pull requests.
 - Export settings into the process environment before starting Go directly; the binaries do not load `.env` automatically. Compose reads `.env` for substitution. Startup logs whether Discord is enabled, without printing its webhook URL. Only new incident transitions notify; existing incidents are not replayed after enabling notifications.
 - Direct-run defaults use local PostgreSQL/Redis, HTTP `:8080`, and three workers. Config validates required connection fields, ports, worker count (1–1000), and nonblank Discord URLs; a blank webhook disables notifications.
 
@@ -68,9 +69,9 @@ Horus handler errors use JSON `{"error":"..."}`: invalid requests return `400`, 
 
 ## Not implemented yet
 
-Durable notification delivery and retries, authentication/ownership, time-weighted uptime, check execution retries, metrics, structured logging, production configuration, and complete SSRF defenses are future work. `/ready` checks connection health, not migration state or actual scheduler and worker progress. A Discord failure does not undo a persisted check or incident transition; the error is reported to the worker and that notification may be missed. The scheduler retries scheduling errors on its next tick, and workers back off after dequeue errors. Runtime connection/listen settings and worker count can be set through environment variables. The monitor constructor checks that name/URL are nonempty, interval/timeout are positive, and expected status is in the HTTP status range; URL safety checks run in the checker before dialing.
+Durable notification delivery and retries, authentication/ownership, time-weighted uptime, check execution retries, metrics, structured logging, and complete SSRF defenses are future work. `/ready` checks connection health, not migration state or actual scheduler and worker progress. A Discord failure does not undo a persisted check or incident transition; the error is reported to the worker and that notification may be missed. The scheduler retries scheduling errors on its next tick, and workers back off after dequeue errors. Runtime connection/listen settings and worker count can be set through environment variables. The monitor constructor checks that name/URL are nonempty, interval/timeout are positive, and expected status is in the HTTP status range; URL safety checks run in the checker before dialing.
 
-The backend v1 contract has been documented and locally verified for freeze readiness. Phase 9 establishes the frontend Overview, monitor list, and detail. A global incident screen remains outside v1 frontend scope.
+The v1 backend contract and frontend routes are frozen. Phase 10 adds production packaging, same-origin routing, Compose integration, and expanded CI. A global incident screen remains outside v1 scope.
 
 ## Principles and non-goals
 

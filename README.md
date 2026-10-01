@@ -1,9 +1,8 @@
 # Horus
 
-Horus is a self-hosted uptime monitoring service written in Go. It checks HTTP
-and HTTPS URLs, stores results and incidents in PostgreSQL, and exposes an
-HTTP/JSON API. The backend is one process with separate API, scheduler, and
-worker packages.
+Horus is a self-hosted uptime monitor with a React dashboard and a Go API. It
+checks HTTP and HTTPS URLs, stores results and incidents in PostgreSQL, and
+uses Redis to hand scheduled checks to a bounded worker pool.
 
 ## Features
 
@@ -15,27 +14,26 @@ worker packages.
   Discord DOWN and RECOVERED webhook notifications on those transitions.
 - Query check history, a check-based uptime summary, incident history, and the
   current incident.
-- Run with Docker Compose, forward-only PostgreSQL migrations, process
-  liveness/readiness endpoints, and GitHub Actions CI.
-- Use the separate React monitor dashboard to list, create, enable, disable,
-  and delete monitors.
+- Use the React dashboard for an Overview, monitor management, response-time
+  charts, check history, and incident detail.
+- Run the five-service stack with Docker Compose, forward-only PostgreSQL
+  migrations, health/readiness checks, and GitHub Actions CI.
 
 ## Architecture
 
 ```text
-HTTP API ──> PostgreSQL monitors, checks, incidents
-                   │
-             1s scheduler
-                   │
-             Redis job list
-                   │
-          bounded worker pool
-                   │
-             HTTP checker
-                   │
-          persisted check result
-                   │
-          incident transition ──> optional Discord webhook
+Browser ──> Nginx static React app
+                └── /api/* ──> Go API ──> PostgreSQL monitors, checks, incidents
+                                  │
+                             1s scheduler
+                                  │
+                             Redis job list
+                                  │
+                         bounded worker pool
+                                  │
+                             HTTP checker
+                                  │
+                        incident transition ──> optional Discord webhook
 ```
 
 The scheduler enqueues due monitors before advancing `next_check_at`. Workers
@@ -50,23 +48,40 @@ Requires Docker and Docker Compose. The preferred local start is:
 ```bash
 cp .env.example .env
 docker compose up --build -d
-curl http://localhost:8080/health
-curl http://localhost:8080/ready
 ```
 
-The expected responses are `{"status":"ok"}` and `{"status":"ready"}`, both
-with HTTP 200. Compose waits for healthy PostgreSQL and Redis, applies
-migrations in a one-shot job, then starts Horus. Inside containers, Horus uses
-the `postgres` and `redis` service names. If the migration job fails, Horus
-does not start.
+Open **http://localhost:3000**. The dashboard routes are `/overview`,
+`/monitors`, and `/monitors/:id`; direct refreshes work. To check the API:
+
+```bash
+curl http://localhost:3000/api/ready
+curl http://localhost:8080/health
+```
+
+The expected responses are `{"status":"ready"}` and `{"status":"ok"}`.
+Compose starts PostgreSQL and Redis, runs migrations once, then starts Horus
+and the production web container. If migrations fail, Horus does not start.
+Published ports bind to `127.0.0.1` by default. Horus has no authentication;
+put remote access behind a trusted access layer rather than publishing these
+ports directly to the internet.
+
+| Service | Role |
+|---|---|
+| `postgres` | Durable monitor, check, and incident data |
+| `redis` | Check jobs |
+| `migrate` | One-shot schema migration |
+| `horus` | API, scheduler, and workers; host API port 8080 |
+| `web` | Nginx static frontend and `/api` proxy; host port 3000 |
 
 ```bash
 docker compose down       # Stop; keep PostgreSQL data
 docker compose down -v    # Intentionally delete local volumes and data
 ```
 
-PostgreSQL uses the `postgres_data` named volume. The second command deletes
-that data; use it only when a fresh local database is intended.
+PostgreSQL uses the `postgres_data` named volume, so a normal `down` and `up`
+preserves monitors, checks, and incidents. Redis uses `redis_data`; queued jobs
+are not an acknowledged durable delivery system. `down -v` deletes both
+volumes; use it only when a fresh local database is intended.
 
 ## Configuration
 
@@ -89,13 +104,15 @@ allows passwordless authentication.
 | `HORUS_HTTP_ADDR` | `:8080` | HTTP listen address |
 | `HORUS_WORKER_COUNT` | `3` | Worker count, allowed 1–1000 |
 | `HORUS_DISCORD_WEBHOOK_URL` | empty | Optional absolute HTTP(S) URL; empty disables notifications |
+| `HORUS_DB_PUBLISH_PORT` | `5432` | Localhost PostgreSQL port for development |
+| `HORUS_REDIS_PUBLISH_PORT` | `6379` | Localhost Redis port for development |
+| `HORUS_HTTP_PUBLISH_PORT` | `8080` | Localhost API port |
+| `HORUS_WEB_PUBLISH_PORT` | `3000` | Localhost production dashboard port |
 
-The safe examples in `.env.example` use `localhost` for direct Go runs.
-Compose sets `HORUS_DB_HOST=postgres`, `HORUS_REDIS_HOST=redis`, internal ports,
-and `HORUS_HTTP_ADDR=:8080`. `HORUS_DB_PUBLISH_PORT`,
-`HORUS_REDIS_PUBLISH_PORT`, and `HORUS_HTTP_PUBLISH_PORT` only change the
-host-side Compose ports; they are not Horus process settings. Change example
-credentials before using Horus outside local development.
+The examples in `.env.example` use `localhost` for direct Go runs. Compose
+sets internal hosts to `postgres` and `redis`, and the web proxy routes
+`/api/*` to `horus:8080/*`. Published-port variables affect only host-side
+Compose ports. Change the example database password before a real deployment.
 
 ## Migrations
 
@@ -249,7 +266,7 @@ Ctrl+C; stop the dependencies with `docker compose down`.
 
 ### Frontend development
 
-The Phase 9 frontend lives in `web/` and requires Node.js 20.19+ and npm.
+The frontend lives in `web/` and requires Node.js 20.19+ and npm.
 Start Horus first using the Compose or direct Go instructions above, then:
 
 ```bash
@@ -259,14 +276,18 @@ npm ci
 npm run dev
 ```
 
-Open `http://localhost:5173/` (which redirects to `/overview`). The final frontend routes are `/overview`, `/monitors`, and `/monitors/:id`. Overview uses `GET /monitors` for total, enabled, and disabled counts and a recent monitor list. It checks current incidents for at most the 12 newest monitors, three requests at a time. If more monitors exist or an incident request fails, it labels the result as partial and omits the aggregate active-incident count. It never equates enabled with healthy. Select a monitor name to open `/monitors/:id` for its summary, response times, checks, and incidents. The frontend defaults to same-origin
-`/api` requests; Vite proxies those requests to `http://localhost:8080` and
-removes `/api` before forwarding. Set `VITE_HORUS_API_URL` to an absolute API
-origin only when that origin explicitly allows the browser's frontend origin.
-For a production static host, proxy `/api/*` to the Horus API with the same
-prefix removal. The backend Compose stack does not serve or deploy the
-frontend. The monitor list shows configuration state (enabled/disabled), not
-live health, uptime, or latency.
+Open `http://localhost:5173/` for Vite development. The frontend uses
+same-origin `/api` requests. Vite proxies them to local Horus on port 8080;
+the production Nginx container proxies them to `horus:8080`, stripping
+`/api`. Normal Compose usage needs no CORS configuration. Use
+`VITE_HORUS_API_URL` only for a separate API origin that explicitly permits
+the browser origin; leave it unset for the production image.
+
+Overview derives total, enabled, and disabled counts from `/monitors`. It
+checks current incidents for at most the 12 newest monitors, with three
+requests in flight. Partial coverage is labeled and no global incident count
+is claimed. Enabled does not mean healthy. The monitor list shows
+configuration state; detail shows summary, checks, and incidents.
 
 Frontend checks:
 
@@ -286,14 +307,38 @@ go test ./...
 go test -race ./...
 go vet ./...
 go build ./...
-docker build .
+docker compose build
 ```
 
 Repository and queue integration tests use real local services. GitHub
 Actions runs on pushes to `main` and pull requests targeting `main`. Its
 single workflow starts healthy PostgreSQL and Redis services, applies
-migrations with `cmd/migrate`, then runs tests, race tests, vet, Go build,
-and Docker build. It does not deploy or publish an image.
+migrations with `cmd/migrate`, then runs tests, race tests, vet, and Go build.
+It also installs frontend dependencies, runs its tests, lint, and build, then
+builds both production images with Compose. CI does not deploy or publish
+images. Local production checks:
+
+```bash
+docker compose build
+docker compose up -d
+docker compose ps
+```
+
+## Screenshots
+
+These were captured from the production Nginx image against a running Horus
+stack and a temporary example monitor.
+
+| Overview | Monitors | Monitor detail |
+|---|---|---|
+| ![Overview](docs/screenshots/overview.png) | ![Monitor list](docs/screenshots/monitors.png) | ![Monitor detail](docs/screenshots/monitor-detail.png) |
+
+## What this repository demonstrates
+
+Go API and package boundaries; a bounded worker pool; Redis job transport;
+PostgreSQL persistence and migrations; incident lifecycle handling; Docker
+Compose production routing; CI across backend and frontend; and a
+React/TypeScript operational UI.
 
 ## Known Limitations
 
@@ -311,10 +356,12 @@ and Docker build. It does not deploy or publish an image.
 - Go does not load `.env` automatically. Databases migrated manually before
   `schema_migrations` may need a baseline or reset. URL safety checks are
   partial and should be reviewed before accepting untrusted monitor URLs.
+- Overview scans at most 12 monitors for current incidents. There is no
+  global incidents screen, authentication, multi-user ownership, or frontend
+  polling. The published UI and API bind to localhost by default.
 
 ## Project Status
 
-The backend v1 flow is implemented and covered by Go tests and local Compose
-verification. Phase 9 frontend routes are implemented as a separate Vite
-development app. A global incidents screen, frontend deployment, authentication,
-and telemetry remain unimplemented.
+Horus v1 includes the backend, frontend, migrations, and production Compose
+packaging. The Git tag is not created automatically. The limitations above
+are deferred work, not v1 release blockers for trusted self-hosted use.

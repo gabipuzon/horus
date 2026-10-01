@@ -68,5 +68,23 @@ jobs:
         run: go vet ./...
       - name: Build Go packages
         run: go build ./...
-      - name: Build Docker image
-        run: docker build .
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: web
+      - name: Test frontend
+        run: npm test
+        working-directory: web
+      - name: Lint frontend
+        run: npm run lint
+        working-directory: web
+      - name: Build frontend
+        run: npm run build
+        working-directory: web
+      - name: Build Docker images
+        run: docker compose build
