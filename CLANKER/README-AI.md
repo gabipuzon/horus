@@ -9,6 +9,7 @@ Use these files as a concise guide to the current repository. Source code and te
 | `CODE-STANDARDS.md` | Existing Go and API conventions |
 | `AI-WORKFLOW.md` | Repository workflow and agent behavior |
 | `PROGRESS.md` | Snapshot of implemented work and known gaps |
+| `UI-CONTEXT.md` | Authoritative frontend visual and UX guidance |
 
 ## Working with this context
 
@@ -38,4 +39,6 @@ Incident history uses the same strict pagination policy, returns `[]` for an exi
 
 Handler-produced API errors use JSON `{"error":"..."}` with `Content-Type: application/json`: request validation is `400`, missing or malformed monitor IDs are `404`, and internal failures are generic `500` responses. Internal failure logs identify the operation and error type without copying error text that could contain secrets. `/ready` keeps its operational `503 {"status":"not_ready"}` response; unsupported paths and methods use the standard Go mux behavior.
 
-Backend v1 documentation now lives in the root README. Local tests, race tests, vet, Go build, Docker build, and an isolated Compose API smoke flow passed for the Phase 8F review. No blocking backend defect was found; limitations such as check-based uptime, non-durable Redis jobs and Discord delivery, missing authentication, and connectivity-only readiness are documented. The backend contract is ready to freeze. The next major work is the frontend/dashboard; no frontend is implemented yet.
+Backend v1 documentation now lives in the root README. Local tests, race tests, vet, Go build, Docker build, and an isolated Compose API smoke flow passed for the Phase 8F review. No blocking backend defect was found; limitations such as check-based uptime, non-durable Redis jobs and Discord delivery, missing authentication, and connectivity-only readiness are documented. The backend contract is ready to freeze.
+
+Phase 9A adds `web/`: Vite, React, TypeScript, Tailwind CSS, local shadcn/ui style primitives with Radix Dialog, React Router, and TanStack Query. A single monitor dashboard lists configuration and supports create, enable, disable, and confirmed delete. It deliberately does not infer health from enabled state. `web/src/lib/api.ts` owns fetch and safe API errors; Vite proxies same-origin `/api/*` to Horus with the prefix removed. `VITE_HORUS_API_URL` optionally selects a separate API origin when browser CORS permits it. The actual visual reference is `UI-CONTEXT.md`; the requested `UI-DESIGN.md` file is absent. Monitor detail and check/incident screens remain next work.

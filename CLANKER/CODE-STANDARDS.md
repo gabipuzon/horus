@@ -1,5 +1,13 @@
 # Code Standards
 
+## Frontend conventions
+
+- Keep the frontend in `web/`, separate from Go. Follow `UI-CONTEXT.md` for status language, density, colors, and accessible interaction.
+- Use React Router for implemented routes, TanStack Query for server state, and local React state for dialogs/forms. Avoid a global state store.
+- Keep fetch and JSON error handling in `web/src/lib/api.ts`; put monitor-specific types, requests, validation, and components under `web/src/features/monitors/`.
+- Only render data the API actually supplies. Enabled/disabled is configuration, not an uptime or health result. Use labeled inputs, focus-visible styles, and Radix-backed dialogs.
+- Validate with `npm test`, `npm run build` (including TypeScript), and `npm run lint` from `web/`.
+
 These conventions describe the current Go code and preferred changes. Security and production features listed as future work should not be mistaken for protections already present.
 
 ## Go and packages

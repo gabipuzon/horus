@@ -6,6 +6,12 @@ Horus is a self-hosted uptime monitoring service written in Go. It stores HTTP m
 
 ## Implemented capabilities
 
+### Frontend foundation
+
+- `web/` contains a separate Vite/React/TypeScript monitor dashboard styled with Tailwind and local shadcn/ui style components, following `UI-CONTEXT.md`.
+- React Router exposes the monitor list; TanStack Query and a typed fetch client load and mutate monitors. The screen supports creation, enable/disable, confirmed deletion, and loading/empty/error feedback.
+- The list only reports enabled/disabled configuration, since the list API does not include health, latency, or uptime. Monitor detail and check/incident screens are not yet implemented.
+
 ### Monitor management
 
 - Create, list, retrieve, enable, disable, and delete monitors.
@@ -64,7 +70,7 @@ Horus handler errors use JSON `{"error":"..."}`: invalid requests return `400`, 
 
 Durable notification delivery and retries, authentication/ownership, time-weighted uptime, check execution retries, metrics, structured logging, production configuration, and complete SSRF defenses are future work. `/ready` checks connection health, not migration state or actual scheduler and worker progress. A Discord failure does not undo a persisted check or incident transition; the error is reported to the worker and that notification may be missed. The scheduler retries scheduling errors on its next tick, and workers back off after dequeue errors. Runtime connection/listen settings and worker count can be set through environment variables. The monitor constructor checks that name/URL are nonempty, interval/timeout are positive, and expected status is in the HTTP status range; URL safety checks run in the checker before dialing.
 
-The backend v1 contract has been documented and locally verified for freeze readiness. The next major phase is a frontend/dashboard; it is not implemented yet.
+The backend v1 contract has been documented and locally verified for freeze readiness. Phase 9A establishes the frontend monitor dashboard. The next frontend work is a monitor detail screen using actual check, summary, and incident APIs.
 
 ## Principles and non-goals
 

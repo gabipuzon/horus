@@ -4,6 +4,8 @@
 
 Horus is a single Go process with an HTTP API, scheduler, and worker pool. PostgreSQL stores monitor configuration, check history, and incidents. Redis transports check jobs between the scheduler and workers.
 
+The separate `web/` Vite application is the Phase 9A frontend. React Router serves the monitor list route, TanStack Query owns monitor server state, and local component state owns dialogs and feedback. `web/src/features/monitors/` holds the monitor flow; `web/src/lib/api.ts` wraps fetch and Horus JSON errors. The frontend has no backend-owned health state in its monitor list, so it renders only enabled/disabled configuration. In development, Vite proxies `/api/*` to the local Horus API after removing `/api`; production static hosting would need an equivalent proxy or an explicitly CORS-enabled separate API origin. The backend Compose stack does not include the frontend.
+
 ```text
 HTTP client ──> net/http API ──> PostgreSQL
 

@@ -4,6 +4,8 @@
 
 Horus has an end-to-end core monitoring flow: manage monitors over HTTP, schedule due checks, enqueue jobs in Redis, execute checks with a bounded worker pool, persist checks and incidents in PostgreSQL, and query check and incident data through the API.
 
+Phase 9A adds a separate frontend in `web/` for the monitor list and its creation, enable/disable, and delete flows. It shows enabled/disabled configuration state only; monitor detail, live health, checks, summary, and incident views are not built.
+
 The code is organized by responsibility: `api`, `check`, `config`, `database`, `incident`, `migrate`, `monitor`, `notification`, `postgres`, `queue`, `scheduler`, and `worker` packages under `internal/`.
 
 ## Implemented
@@ -59,6 +61,13 @@ The code is organized by responsibility: `api`, `check`, `config`, `database`, `
 - PostgreSQL 17 and Redis 8 services use healthchecks. CI applies migrations through `cmd/migrate`, then runs tests, race tests, vet, Go build, and Docker build without a Discord webhook or repository secrets.
 - Migration tests keep schema work inside a rolled-back transaction. The Redis queue integration test uses DB 14 so a locally running Horus worker on DB 0 cannot consume its jobs.
 
+### Frontend Phase 9A
+
+- `web/` uses Vite, React, TypeScript, Tailwind CSS, local shadcn/ui style primitives backed by Radix Dialog, React Router, and TanStack Query. `UI-CONTEXT.md` is the visual and UX reference; `UI-DESIGN.md` is not present.
+- One `/monitors` screen has desktop sidebar and compact mobile navigation, a dense list of monitor configuration, a validated create dialog, direct enable/disable actions, and a named delete confirmation. Loading skeletons, empty-state action, page retry, and local mutation errors are implemented.
+- The typed fetch client under `web/src/lib/api.ts` handles Horus JSON errors. Vite proxies same-origin `/api/*` requests to the local Go API with `/api` removed; `VITE_HORUS_API_URL` may select a separate origin when browser CORS permits it. No backend CORS or Compose changes were made.
+- The list deliberately shows only enabled/disabled configuration state. Monitor health, latency, uptime, check history, incidents, and detail screens remain unimplemented in the frontend.
+
 ## Routes
 
 ```text
@@ -87,6 +96,7 @@ GET    /monitors/{id}/incidents/current
 - Checker uses `http.DefaultClient`; status mismatch is checked against one exact expected status.
 - Offset-based check history pages can shift when new checks arrive between requests.
 - Offset-based incident history pages can shift when incidents open between requests.
+- The frontend is a development app, not served by backend Compose. Production static hosting needs an equivalent `/api` reverse proxy or a separately CORS-enabled API origin. The monitor list does not show live check status.
 
 ## Verification record
 
@@ -112,6 +122,8 @@ For Phase 8E, config tests cover every default, invalid worker counts and ports,
 
 For Phase 8F, the README was consolidated into a complete backend v1 entrypoint and checked against routes, configuration, migrations, Docker/Compose, CI, and tests. A source search found no completed TODO/FIXME comments to remove. `go test ./...`, `go test -race ./...`, `go vet ./...`, `go build ./...`, `git diff --check`, and `docker build .` passed locally. An isolated `docker compose up --build -d` stack reached healthy PostgreSQL, Redis, and Horus states; its migration job exited 0. `/health` and `/ready` returned `200`. A temporary monitor returned `201` on creation and `200` on retrieval, persisted a successful check visible in history and summary, returned `200 []` for incident history and `204` for current incident, and returned `204` on deletion. The isolated containers and test volumes were removed. No blocking backend defect was found; the documented v1 limitations remain. The GitHub-hosted CI workflow has not been observed in this review.
 
+For Phase 9A, frontend tests, TypeScript/production build, and ESLint passed in a Node 22 container. The final test run covered 15 tests across form validation and monitor-page interactions. The live Vite server served the `/monitors` page as HTML and proxied `/api/monitors` to the running Horus API. Headless Firefox screenshots were inspected at desktop and narrow widths; they captured the initial loading state. A manual click-through against the live backend is still pending.
+
 ## Next work
 
-Phases 8A–8F are complete. The backend v1 contract is ready to freeze for frontend/dashboard development; no frontend is implemented yet. Authentication/authorization, queue recovery, telemetry, and durable notification delivery remain future work.
+Phases 8A–8F and 9A are complete. Phase 9B should add a monitor detail screen using persisted check, summary, and incident APIs, with honest loading and empty states. Authentication/authorization, queue recovery, telemetry, and durable notification delivery remain future work.

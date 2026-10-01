@@ -17,6 +17,8 @@ worker packages.
   current incident.
 - Run with Docker Compose, forward-only PostgreSQL migrations, process
   liveness/readiness endpoints, and GitHub Actions CI.
+- Use the separate React monitor dashboard to list, create, enable, disable,
+  and delete monitors.
 
 ## Architecture
 
@@ -245,6 +247,36 @@ The exported `localhost` settings connect to the published dependency
 ports. Horus itself does not load `.env`. Stop the direct server with
 Ctrl+C; stop the dependencies with `docker compose down`.
 
+### Frontend development
+
+The Phase 9A frontend lives in `web/` and requires Node.js 20.19+ and npm.
+Start Horus first using the Compose or direct Go instructions above, then:
+
+```bash
+cd web
+cp .env.example .env
+npm ci
+npm run dev
+```
+
+Open `http://localhost:5173/monitors`. The frontend defaults to same-origin
+`/api` requests; Vite proxies those requests to `http://localhost:8080` and
+removes `/api` before forwarding. Set `VITE_HORUS_API_URL` to an absolute API
+origin only when that origin explicitly allows the browser's frontend origin.
+For a production static host, proxy `/api/*` to the Horus API with the same
+prefix removal. The backend Compose stack does not serve or deploy the
+frontend. The monitor list shows configuration state (enabled/disabled), not
+live health, uptime, or latency.
+
+Frontend checks:
+
+```bash
+cd web
+npm test
+npm run build
+npm run lint
+```
+
 ## Testing and CI
 
 With local PostgreSQL and Redis running and migrations applied:
@@ -283,5 +315,6 @@ and Docker build. It does not deploy or publish an image.
 ## Project Status
 
 The backend v1 flow is implemented and covered by Go tests and local Compose
-verification. Frontend/dashboard work is the next phase; no frontend,
-authentication, deployment pipeline, or metrics endpoint is implemented.
+verification. The Phase 9A monitor frontend is implemented as a separate Vite
+development app. Monitor detail, checks, summary, incident screens, frontend
+deployment, authentication, and metrics are not implemented.
