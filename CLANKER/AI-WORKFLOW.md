@@ -17,6 +17,7 @@
 - Review the final diff and keep changes within the requested scope.
 - For frontend changes, follow `UI-CONTEXT.md`, keep requests in the typed API client, and run the `web/` npm test, build, and lint scripts. Vite proxies same-origin `/api` requests to local Horus; start Horus before browser smoke testing.
 - Detail screens should keep metadata, summary, checks, and incident queries independent so a section failure remains local. Check `204` current-incident and no-check summary states against the backend contract.
+- For Overview, verify that `/monitors` counts are configuration counts and that capped current-incident requests explicitly report incomplete coverage. Browser passes should visit all three routes at desktop, tablet, and mobile widths and clean up temporary monitors.
 
 ## Documentation
 

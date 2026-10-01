@@ -16,7 +16,7 @@ const fields: { key: keyof MonitorFormValues; label: string; hint?: string; inpu
   { key: 'expected_status', label: 'Expected HTTP status', inputMode: 'numeric' },
 ]
 
-export function CreateMonitorDialog({ open, onOpenChange, onCreated }: { open: boolean; onOpenChange: (open: boolean) => void; onCreated: (message: string) => void }) {
+export function CreateMonitorDialog({ open, onOpenChange, onCreated, showTrigger = true }: { open: boolean; onOpenChange: (open: boolean) => void; onCreated: (message: string) => void; showTrigger?: boolean }) {
   const [values, setValues] = useState<MonitorFormValues>(initialValues)
   const [errors, setErrors] = useState<MonitorFormErrors>({})
   const queryClient = useQueryClient()
@@ -40,7 +40,7 @@ export function CreateMonitorDialog({ open, onOpenChange, onCreated }: { open: b
   }
 
   return <>
-    <Button onClick={() => { mutation.reset(); onOpenChange(true) }}><Plus size={16} /> Add monitor</Button>
+    {showTrigger && <Button onClick={() => { mutation.reset(); onOpenChange(true) }}><Plus size={16} /> Add monitor</Button>}
     <Dialog open={open} onOpenChange={(next) => { if (!mutation.isPending) onOpenChange(next) }}>
       <DialogContent aria-describedby="create-description">
         <DialogTitle className="text-lg font-semibold">Add monitor</DialogTitle>

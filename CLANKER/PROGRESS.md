@@ -4,7 +4,7 @@
 
 Horus has an end-to-end core monitoring flow: manage monitors over HTTP, schedule due checks, enqueue jobs in Redis, execute checks with a bounded worker pool, persist checks and incidents in PostgreSQL, and query check and incident data through the API.
 
-Phase 9A adds a separate frontend in `web/` for monitor management. Phase 9B adds `/monitors/:id` with configuration, check-based summary, response-time chart, first-page checks, current incident, and first-page incident history. The list shows configuration state only. The detail route labels an open incident DOWN and does not infer health when no incident is open.
+Phase 9 frontend is implemented in `web/`: `/` redirects to `/overview`, `/monitors` manages monitors, and `/monitors/:id` shows configuration, check-based summary, response-time chart, first-page checks, current incident, and first-page incident history. Overview shows configuration counts, bounded current-problem visibility, and recent monitor links. The list shows configuration state only. The detail route labels an open incident DOWN and does not infer health when no incident is open.
 
 The code is organized by responsibility: `api`, `check`, `config`, `database`, `incident`, `migrate`, `monitor`, `notification`, `postgres`, `queue`, `scheduler`, and `worker` packages under `internal/`.
 
@@ -128,4 +128,8 @@ For Phase 9B, the detail page uses five typed endpoints and independent TanStack
 
 ## Next work
 
-Phases 8A–8F and 9A–9B are complete. Phase 9C could add the global Incidents view using the existing backend contract, if scoped and authorized separately. Overview, authentication/authorization, queue recovery, telemetry, and durable notification delivery remain future work.
+Phases 8A–8F and 9A–9C are complete. Phase 9 frontend is ready to close for v1. Phase 10 should focus on a separately scoped reliability and security pass, especially authentication/ownership, queue recovery, and durable notification delivery. A global incidents feed/page would require a separate contract decision and is not part of Phase 9. Frontend production packaging and deployment remain future work.
+
+For Phase 9C, `/overview` uses `GET /monitors` for total, enabled, and disabled counts and the eight newest monitor links. It checks current incidents for at most the 12 newest monitors, including disabled monitors whose incident may remain open, with three requests in flight at once. Results are cached for 60 seconds without polling. A partial or failed scan is labeled and does not show a global active-incident count. No healthy count is inferred. Desktop and mobile navigation expose only Overview and Monitors. The monitor-list page error avoids raw response text; the create dialog is reused for Overview onboarding. Horizontal table scrollbars use dark colors, and the mobile header protects the Horus brand from flex shrink. No backend files or contract changed.
+
+Final Phase 9C frontend validation passed in the local Node 22 image: 31 tests, TypeScript/production build, ESLint, and `git diff --check`. A live Compose backend and headless Firefox BiDi pass loaded all three routes, created a temporary failing monitor, observed the same open HTTP incident in Overview and detail, exercised enable/disable and confirmed delete, and removed the temporary monitor. Desktop (1280 px), tablet (800 px), and narrow mobile (375 px) screenshots were inspected; page width did not overflow and tables scrolled within their sections. The preexisting four disabled repository test monitors were left untouched.

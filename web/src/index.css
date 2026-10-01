@@ -18,4 +18,5 @@ body { margin: 0; min-width: 320px; background: var(--color-background); color: 
 button, input { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; }
+.overflow-x-auto { scrollbar-color: var(--color-border) var(--color-surface); scrollbar-width: thin; }
 ::selection { background: #3c527c; color: white; }

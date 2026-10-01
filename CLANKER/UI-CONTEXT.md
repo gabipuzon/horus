@@ -143,13 +143,12 @@ Use exactly these labels and indicators. Keep them short and consistent across e
 ## 6. Layout and navigation
 
 - Persistent **left sidebar** on desktop.
-- Nav, in this order, and **only this**:
+- Implemented v1 nav, in this order, and **only this**:
 
 ```text
 Horus
   Overview
   Monitors
-  Incidents
 ```
 
 - Do not add nav items until the feature exists.
@@ -170,13 +169,12 @@ Desktop is primary, but tablet and mobile must be usable.
 ## 7. Screen specifications
 
 ### 7.1 Overview / Dashboard
-Must answer immediately: **Is anything down? How many monitors are healthy? Are there active incidents? What changed recently?**
+Must answer immediately: **How many monitors exist? How many are enabled? Are current incidents visible within the bounded scan? Which monitors need attention?** Enabled does not mean healthy. If current-incident coverage is partial, label it and do not present a global active-incident count.
 
 Priority order (top to bottom):
 1. Active problems (down monitors, active incidents)
-2. Overall monitor status (e.g. healthy / down / disabled counts)
-3. Useful summary metrics
-4. Recent activity / history
+2. Monitor configuration counts (total / enabled / disabled)
+3. A compact recent monitor list
 
 Do **not** open with decorative analytics. When nothing is wrong, the active-problems area should be quiet and clearly confirm that.
 
