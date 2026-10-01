@@ -41,7 +41,7 @@ The code is organized by responsibility: `api`, `check`, `config`, `database`, `
 
 - One-second scheduler selects enabled monitors whose `next_check_at` is due, queues jobs in Redis list `horus:checks`, then advances their schedule. A per-monitor enqueue or schedule-update failure is logged without blocking later monitors in the same pass. Failed enqueues leave the monitor due; update errors are reevaluated from PostgreSQL on the next tick.
 - Redis client provides ping, enqueue (`LPUSH`), and blocking dequeue (`BRPOP`) with a one-second wait so an idle worker can observe cancellation promptly.
-- Application starts three workers in the same process; workers load monitors, run checks, and persist results.
+- Application starts the configured worker count (three by default) in the same process; workers load monitors, run checks, and persist results.
 - Process handles interrupt/SIGTERM, cancels and joins workers, and gracefully shuts down the HTTP server. Idle Redis dequeues no longer wait indefinitely before worker shutdown can finish.
 
 ### Runtime/API
@@ -78,12 +78,12 @@ GET    /monitors/{id}/incidents/current
 
 ## Known gaps and limitations
 
-- No durable notification delivery or time-weighted uptime calculation; the reported percentage counts check outcomes.
+- No durable notification delivery, flapping suppression, or time-weighted uptime calculation; the reported percentage counts check outcomes.
 - No user accounts, authentication, authorization, or monitor ownership.
 - The checker accepts only absolute HTTP/HTTPS URLs without embedded credentials, rejects non-public DNS results at connection time, and does not follow redirects. Other SSRF edge cases should continue to be reviewed as the service is hardened.
 - No check execution retries, duplicate-job protection, or queue recovery/dead-letter handling. Scheduling errors are retried on the next tick, and workers back off after dequeue errors. If enqueue succeeds but updating `next_check_at` fails, a later tick can enqueue the same monitor again.
 - No metrics, structured logging, or production secret management. `/ready` checks dependency connectivity, not migration state, scheduler progress, worker activity, or queue delivery.
-- PostgreSQL/Redis addresses and credentials, HTTP listen address, worker count, and optional Discord webhook are configurable through `HORUS_DB_HOST`, `HORUS_DB_PORT`, `HORUS_DB_USER`, `HORUS_DB_PASSWORD`, `HORUS_DB_NAME`, `HORUS_REDIS_HOST`, `HORUS_REDIS_PORT`, `HORUS_HTTP_ADDR`, `HORUS_WORKER_COUNT`, and `HORUS_DISCORD_WEBHOOK_URL`. Local Compose-compatible defaults are used when unset. Legacy schemas created manually before `schema_migrations` need an explicit baseline or fresh volume; migrations are not inferred from existing tables.
+- Legacy schemas created manually before `schema_migrations` need an explicit baseline or fresh volume; migrations are not inferred from existing tables. Horus also requires PostgreSQL and Redis at startup and does not load `.env` automatically.
 - Checker uses `http.DefaultClient`; status mismatch is checked against one exact expected status.
 - Offset-based check history pages can shift when new checks arrive between requests.
 - Offset-based incident history pages can shift when incidents open between requests.
@@ -110,6 +110,8 @@ For Phase 8D, focused handler tests cover JSON `400`, `404`, and generic `500` r
 
 For Phase 8E, config tests cover every default, invalid worker counts and ports, blank required fields, optional/invalid Discord URLs, and the rule that Go does not load `.env`. Server tests cover dependency-independent liveness, all readiness states, both stalled dependency positions, and safe Discord startup logs. Queue tests exercise real Redis cancellation; worker tests cover idle pool shutdown. Focused config, queue, worker, and server tests, `go test ./...`, `go test -race ./...`, `go vet ./...`, and `go build ./...` passed with local services. Direct server runs exited nonzero when either PostgreSQL or Redis used a closed local port. Compose returned `200` for both `/health` and `/ready`; `docker compose stop horus` produced exit code 0, and Horus was restarted.
 
+For Phase 8F, the README was consolidated into a complete backend v1 entrypoint and checked against routes, configuration, migrations, Docker/Compose, CI, and tests. A source search found no completed TODO/FIXME comments to remove. `go test ./...`, `go test -race ./...`, `go vet ./...`, `go build ./...`, `git diff --check`, and `docker build .` passed locally. An isolated `docker compose up --build -d` stack reached healthy PostgreSQL, Redis, and Horus states; its migration job exited 0. `/health` and `/ready` returned `200`. A temporary monitor returned `201` on creation and `200` on retrieval, persisted a successful check visible in history and summary, returned `200 []` for incident history and `204` for current incident, and returned `204` on deletion. The isolated containers and test volumes were removed. No blocking backend defect was found; the documented v1 limitations remain. The GitHub-hosted CI workflow has not been observed in this review.
+
 ## Next work
 
-Phase 8A monitor API, Phase 8B check history/summary, Phase 8C incident API semantics, Phase 8D handler error consistency, and Phase 8E runtime/config polish are implemented. Phase 8F final backend documentation is next. Authentication/authorization, queue recovery, telemetry, and durable notification delivery remain future work.
+Phases 8A–8F are complete. The backend v1 contract is ready to freeze for frontend/dashboard development; no frontend is implemented yet. Authentication/authorization, queue recovery, telemetry, and durable notification delivery remain future work.

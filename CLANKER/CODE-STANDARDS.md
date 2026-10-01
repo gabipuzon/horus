@@ -42,7 +42,7 @@ Handler-produced errors use the shared `writeError` helper: `application/json` w
 - PostgreSQL repositories use parameterized queries and receive request/job context.
 - Schema changes belong in ordered SQL files under `migrations/`. `cmd/migrate` embeds and applies pending versions transactionally; Compose runs it before the server. The server does not migrate at startup.
 - PostgreSQL holds durable monitor, check, and incident state; Redis currently carries jobs on `horus:checks`. Discord notifications are optional and sent after incident transitions. Delivery errors must not undo persisted state.
-- Keep worker concurrency bounded and respect cancellation. Current process starts three workers.
+- Keep worker concurrency bounded and respect cancellation. Current process starts three workers by default.
 - Test domain behavior and handler contracts with focused tests. Repository tests connect to a local PostgreSQL instance, so they require the database and applied migrations.
 - Keep integration tests isolated from live application data. Migration tests use their own rolled-back schema; Redis queue tests use a separate test DB. CI starts real PostgreSQL and Redis services and runs migrations before tests.
 

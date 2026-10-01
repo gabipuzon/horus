@@ -9,7 +9,7 @@ HTTP client ──> net/http API ──> PostgreSQL
 
 PostgreSQL monitors ──> 1s scheduler ──> Redis list `horus:checks`
                                                 │
-                                      3 blocking workers
+                                blocking workers (default 3)
                                                 │
                                       HTTP checker / target
                                                 │
@@ -51,7 +51,7 @@ The API strictly decodes one monitor-creation JSON value, rejects unknown fields
 
 ### Scheduling and checks
 
-The scheduler wakes every second, lists monitors, skips disabled or not-yet-due monitors, pushes a `MonitorID` job to Redis, then advances the due monitor's `next_check_at` by one interval. An enqueue or schedule-update failure is logged and does not prevent later monitors in the same pass from being attempted. An enqueue failure leaves the monitor due; after an update error, the next tick reads its persisted schedule again. Redis uses the `horus:checks` list (`LPUSH`/`BRPOP`). Each blocking dequeue waits at most one second before checking for cancellation and blocking again; this avoids a busy loop. Three workers are started at process startup. Each worker loads the monitor, runs the checker through `CheckService`, and persists the result.
+The scheduler wakes every second, lists monitors, skips disabled or not-yet-due monitors, pushes a `MonitorID` job to Redis, then advances the due monitor's `next_check_at` by one interval. An enqueue or schedule-update failure is logged and does not prevent later monitors in the same pass from being attempted. An enqueue failure leaves the monitor due; after an update error, the next tick reads its persisted schedule again. Redis uses the `horus:checks` list (`LPUSH`/`BRPOP`). Each blocking dequeue waits at most one second before checking for cancellation and blocking again; this avoids a busy loop. The configured worker count defaults to three. Each worker loads the monitor, runs the checker through `CheckService`, and persists the result.
 
 The checker performs a GET with a timeout derived from the monitor, measures elapsed time, and compares the response status to `expected_status`. Request errors are classified as `network` or `timeout`; mismatched HTTP responses are `http`. The check service persists every result first, then opens an incident for failures or resolves the open incident after success. PostgreSQL returns the incident only when an insert or resolution actually changes a row; repeated failures and ordinary successes do not produce transitions. On each transition, the service sends one DOWN or RECOVERED notification through the optional notifier. Messages include monitor details, initial failure context, and incident times; recovery includes outage duration. If the incident transition fails, the check remains persisted and the service returns an explicit error. If Discord fails after a transition, check and incident state remain persisted and the service returns an error for the worker to log. Workers back off after dequeue errors. There is no check execution retry, job acknowledgement/dead-letter strategy, or duplicate-job suppression.
 

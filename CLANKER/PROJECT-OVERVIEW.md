@@ -16,7 +16,7 @@ Horus is a self-hosted uptime monitoring service written in Go. It stores HTTP m
 ### Health checks and history
 
 - Schedule due enabled monitors and enqueue check jobs in Redis.
-- Run checks using a bounded pool of three workers.
+- Run checks using a bounded worker pool (three by default).
 - Record status code, latency, success, failure category, optional error text, and timestamp in PostgreSQL.
 - Classify unsuccessful results as `http`, `network`, or `timeout`; successful results have an empty failure category.
 - List checks newest first with strict limit/offset pagination, returning `[]` for an existing monitor without checks. Return aggregate count/latency/latest-status summaries with check-based uptime percentage; missing or malformed monitor IDs return `404` on both routes.
@@ -63,6 +63,8 @@ Horus handler errors use JSON `{"error":"..."}`: invalid requests return `400`, 
 ## Not implemented yet
 
 Durable notification delivery and retries, authentication/ownership, time-weighted uptime, check execution retries, metrics, structured logging, production configuration, and complete SSRF defenses are future work. `/ready` checks connection health, not migration state or actual scheduler and worker progress. A Discord failure does not undo a persisted check or incident transition; the error is reported to the worker and that notification may be missed. The scheduler retries scheduling errors on its next tick, and workers back off after dequeue errors. Runtime connection/listen settings and worker count can be set through environment variables. The monitor constructor checks that name/URL are nonempty, interval/timeout are positive, and expected status is in the HTTP status range; URL safety checks run in the checker before dialing.
+
+The backend v1 contract has been documented and locally verified for freeze readiness. The next major phase is a frontend/dashboard; it is not implemented yet.
 
 ## Principles and non-goals
 

@@ -1,139 +1,79 @@
 # Horus
 
-Horus is a lightweight uptime monitoring service written in Go.
-
-It periodically checks configured URLs, records the results in PostgreSQL, and exposes an HTTP API for managing monitors and viewing check history.
-
-## Current Architecture
-
-```text
-                    ┌──────────────┐
-                    │   Horus API  │
-                    └──────┬───────┘
-                           │
-                           ▼
-                    ┌──────────────┐
-                    │  PostgreSQL  │
-                    │   Monitors   │
-                    │    Checks    │
-                    └──────┬───────┘
-                           │
-                           ▼
-                    ┌──────────────┐
-                    │  Scheduler   │
-                    └──────┬───────┘
-                           │
-                           ▼
-                    ┌──────────────┐
-                    │ Worker Pool  │
-                    └──────┬───────┘
-                           │
-                           ▼
-                    ┌──────────────┐
-                    │ HTTP Checker │
-                    └──────┬───────┘
-                           │
-                           ▼
-                      Monitored URL
-```
+Horus is a self-hosted uptime monitoring service written in Go. It checks HTTP
+and HTTPS URLs, stores results and incidents in PostgreSQL, and exposes an
+HTTP/JSON API. The backend is one process with separate API, scheduler, and
+worker packages.
 
 ## Features
 
-* Create, list, retrieve, enable, disable, and delete monitors
-* Configurable check intervals
-* Configurable request timeouts
-* Expected HTTP status validation
-* HTTP, network, and timeout failure classification
-* Response latency measurement
-* Persistent check history
-* Paginated check history
-* Check history summaries
-* Concurrent check workers
-* Graceful application shutdown
-* PostgreSQL persistence and forward-only schema migrations
-* Docker Compose startup for PostgreSQL, Redis, migrations, and Horus
+- Create, list, retrieve, enable, disable, and delete monitors.
+- Schedule periodic checks through a Redis list and a bounded worker pool.
+- Compare HTTP responses with an expected status; classify HTTP, network, and
+  timeout failures; persist check history and latency.
+- Open one incident for an outage and resolve it on recovery. Optionally send
+  Discord DOWN and RECOVERED webhook notifications on those transitions.
+- Query check history, a check-based uptime summary, incident history, and the
+  current incident.
+- Run with Docker Compose, forward-only PostgreSQL migrations, process
+  liveness/readiness endpoints, and GitHub Actions CI.
 
-## Tech Stack
+## Architecture
 
-* Go
-* PostgreSQL
-* pgx
-* Docker Compose
-* HTTP/JSON API
+```text
+HTTP API ──> PostgreSQL monitors, checks, incidents
+                   │
+             1s scheduler
+                   │
+             Redis job list
+                   │
+          bounded worker pool
+                   │
+             HTTP checker
+                   │
+          persisted check result
+                   │
+          incident transition ──> optional Discord webhook
+```
 
-## Requirements
+The scheduler enqueues due monitors before advancing `next_check_at`. Workers
+consume jobs, perform checks, then persist each result before attempting the
+incident transition. An incident transition failure leaves the check stored.
+A webhook failure leaves both the check and incident state stored.
 
-* Docker and Docker Compose for the preferred quick start
-* Go for running the process directly
+## Quick Start
 
-## Continuous integration
-
-GitHub Actions runs on pushes to `main` and pull requests targeting `main`.
-CI starts PostgreSQL and Redis, applies the SQL migrations with `cmd/migrate`,
-then runs tests, the race detector, `go vet`, `go build`, and a Docker image build.
-The workflow does not need a Discord webhook or repository secrets.
-
-## Quick start with Docker Compose
-
-Copy the safe local defaults, then build and start the stack:
+Requires Docker and Docker Compose. The preferred local start is:
 
 ```bash
 cp .env.example .env
-docker compose up --build
+docker compose up --build -d
+curl http://localhost:8080/health
+curl http://localhost:8080/ready
 ```
 
-Compose starts PostgreSQL and Redis, waits for both to be healthy, applies pending
-SQL migrations, then starts Horus. The migration job records completed versions in
-`schema_migrations`; later starts skip them. A failed migration prevents Horus from
-starting. PostgreSQL data lives in the named `postgres_data` volume and survives
-normal restarts. Open `http://localhost:8080` for the API. `GET /health` returns
-`200 {"status":"ok"}` for process liveness without checking dependencies.
-`GET /ready` gives PostgreSQL and Redis a shared one-second deadline: both
-reachable returns `200 {"status":"ready"}`; either unavailable returns
-`503 {"status":"not_ready"}` without dependency error details. Readiness
-checks connectivity, not scheduler or worker progress.
-Databases initialized manually before `schema_migrations` need an explicit
-migration baseline; the command does not infer completed versions from tables.
-
-Set `HORUS_DISCORD_WEBHOOK_URL` in `.env` to enable optional incident notifications.
-Leave it blank to disable them. `.env` is read by Compose; it is not copied into
-the image. Compose sets database and Redis hosts to `postgres` and `redis` inside
-containers. The example's `localhost` values are for direct Go runs. Host ports
-can be changed with `HORUS_HTTP_PUBLISH_PORT`, `HORUS_DB_PUBLISH_PORT`, and
-`HORUS_REDIS_PUBLISH_PORT`.
-
-Stop containers with `Ctrl+C` or `docker compose down`. To intentionally delete
-local PostgreSQL and Redis data as well, run `docker compose down -v`.
-
-## Run Go directly during development
-
-Start the dependencies, export local settings, then migrate and start the server:
+The expected responses are `{"status":"ok"}` and `{"status":"ready"}`, both
+with HTTP 200. Compose waits for healthy PostgreSQL and Redis, applies
+migrations in a one-shot job, then starts Horus. Inside containers, Horus uses
+the `postgres` and `redis` service names. If the migration job fails, Horus
+does not start.
 
 ```bash
-docker compose up -d postgres redis
-cp .env.example .env
-set -a
-. ./.env
-set +a
-go run ./cmd/migrate
-go run ./cmd/server
+docker compose down       # Stop; keep PostgreSQL data
+docker compose down -v    # Intentionally delete local volumes and data
 ```
 
-`cmd/migrate` is safe to run again: it applies only unrecorded SQL migrations.
-Horus itself does not load `.env`; export it as shown or set `HORUS_*` variables
-through your process environment. Horus requires PostgreSQL and Redis at
-startup and exits if either initial connection check fails. The server does
-not run migrations itself; run `cmd/migrate` first when starting Go directly.
-Run tests with:
+PostgreSQL uses the `postgres_data` named volume. The second command deletes
+that data; use it only when a fresh local database is intended.
 
-```bash
-go test ./...
-```
+## Configuration
 
-The following settings are read from the process environment. Unset values use
-the local development defaults shown here. Blank host, user, database name,
-HTTP address, and port values are rejected; ports must be 1–65535. A blank
-database password is allowed only if the PostgreSQL server permits it.
+All settings have local development defaults. Go reads the **process
+environment**, never `.env` automatically. Docker Compose reads `.env` for
+substitution; it supplies container-specific hosts and ports. Blank database
+host/user/name, Redis host, HTTP address, and DB/Redis ports are rejected.
+Ports must be 1–65535. An empty database password is permitted if PostgreSQL
+allows passwordless authentication.
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -144,260 +84,204 @@ database password is allowed only if the PostgreSQL server permits it.
 | `HORUS_DB_NAME` | `horus` | PostgreSQL database |
 | `HORUS_REDIS_HOST` | `localhost` | Redis host |
 | `HORUS_REDIS_PORT` | `6379` | Redis port |
-| `HORUS_HTTP_ADDR` | `:8080` | Horus listen address |
-| `HORUS_WORKER_COUNT` | `3` | Worker count, 1–1000 |
-| `HORUS_DISCORD_WEBHOOK_URL` | empty | Optional absolute HTTP(S) webhook URL; empty disables notifications |
+| `HORUS_HTTP_ADDR` | `:8080` | HTTP listen address |
+| `HORUS_WORKER_COUNT` | `3` | Worker count, allowed 1–1000 |
+| `HORUS_DISCORD_WEBHOOK_URL` | empty | Optional absolute HTTP(S) URL; empty disables notifications |
 
-Compose uses the same database credentials but sets the container hosts to
-`postgres` and `redis` and their internal ports to `5432` and `6379`. The
-`HORUS_*_PUBLISH_PORT` values in `.env.example` change host-side Compose ports,
-not the process configuration inside containers.
+The safe examples in `.env.example` use `localhost` for direct Go runs.
+Compose sets `HORUS_DB_HOST=postgres`, `HORUS_REDIS_HOST=redis`, internal ports,
+and `HORUS_HTTP_ADDR=:8080`. `HORUS_DB_PUBLISH_PORT`,
+`HORUS_REDIS_PUBLISH_PORT`, and `HORUS_HTTP_PUBLISH_PORT` only change the
+host-side Compose ports; they are not Horus process settings. Change example
+credentials before using Horus outside local development.
 
-SIGINT or SIGTERM cancels the scheduler and workers. Idle Redis dequeues wake
-within their one-second blocking interval to observe cancellation. Horus joins
-the workers, then gives the HTTP server up to five seconds to shut down.
+## Migrations
 
-### Optional Discord notifications
+`cmd/migrate` embeds the numbered SQL files in `migrations/` and applies
+pending versions in numeric order. `schema_migrations` records completed
+versions. Each migration and its version record run in one transaction, so a
+failed migration rolls back and exits nonzero. A fresh database applies every
+version; an already-current database applies zero and exits successfully.
+Compose runs this command before Horus. For direct Go runs, invoke it
+separately; the server does not migrate at startup.
 
-For a direct Go run, Horus reads the process environment; it does not
-automatically load `.env`. After setting `HORUS_DISCORD_WEBHOOK_URL` in `.env`,
-export its values before starting Horus:
-
-```bash
-(
-  set -a
-  . ./.env
-  set +a
-  go run ./cmd/server
-)
-```
-
-Startup logs `Discord notifications enabled` or `Discord notifications disabled`
-without exposing the webhook URL. An unset or blank value disables notifications.
-Production deployments should provide the variable through their process environment.
-
-DOWN is sent only when a new incident opens; RECOVERED is sent when that incident
-resolves. For a DOWN test, create a fresh monitor for
-`https://httpbin.org/status/500` expecting HTTP 200. Repeated failures during an
-existing incident do not send more messages. Enabling notifications or restarting
-Horus does not replay an incident that opened while notifications were disabled.
-Webhook failures are logged without the webhook URL and do not undo persisted
-checks or incidents; delivery is not retried.
-
-## Creating a Monitor
-
-Create a monitor for a public HTTP endpoint:
-
-```bash
-curl -X POST http://localhost:8080/monitors \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "HTTPBin",
-    "url": "https://httpbin.org/status/200",
-    "interval_seconds": 10,
-    "timeout_seconds": 5,
-    "expected_status": 200
-  }'
-```
-
-The response contains the monitor ID:
-
-```json
-{
-  "id": "monitor-id",
-  "name": "HTTPBin",
-  "url": "https://httpbin.org/status/200",
-  "interval_seconds": 10,
-  "timeout_seconds": 5,
-  "expected_status": 200,
-  "enabled": true
-}
-```
-
-Creation returns `201 Created`. The request must be one JSON object with only the
-documented fields; malformed JSON, unknown fields, and trailing data return `400`.
-Name must not be blank. URL must be an absolute HTTP or HTTPS URL without embedded
-credentials. Interval and timeout must be positive whole seconds that fit the
-PostgreSQL integer columns; expected status must be 100–599. URL DNS/IP checks
-still happen when a check runs, not during creation.
-
-Horus will then check the URL every 10 seconds.
-
-## Viewing Check History
-
-Replace `MONITOR_ID` with the ID returned when creating the monitor:
-
-```bash
-curl http://localhost:8080/monitors/MONITOR_ID/checks
-```
-
-Pagination is supported:
-
-```bash
-curl "http://localhost:8080/monitors/MONITOR_ID/checks?limit=20&offset=0"
-```
-
-Checks are returned newest first by `checked_at` (with check ID breaking timestamp
-ties). `limit` defaults to 50 and must be 1–100; `offset` defaults to 0 and must
-be nonnegative. Invalid or empty pagination values return `400`. An existing
-monitor with no checks returns `200` and `[]`; a missing or malformed monitor ID
-returns `404`. Each check includes its ID, monitor ID, HTTP status (0 if no
-response was received), latency in milliseconds, success, failure type, and
-check time. A stored error message is included when present.
-
-## Viewing a Summary
-
-```bash
-curl http://localhost:8080/monitors/MONITOR_ID/summary
-```
-
-Example:
-
-```json
-{
-  "total_checks": 10,
-  "successful_checks": 9,
-  "failed_checks": 1,
-  "average_latency_ms": 42,
-  "latest_status": 200,
-  "uptime_percentage": 90
-}
-```
-
-`uptime_percentage` is successful persisted checks divided by all persisted
-checks, multiplied by 100 and rounded to two decimal places. It measures check
-outcomes, not elapsed uptime. `average_latency_ms` is the average of persisted
-latencies, truncated to whole milliseconds. `latest_status` comes from the
-newest check; 0 means that check received no HTTP response. For an existing
-monitor with no checks, all count, latency, and status fields are 0 and
-`uptime_percentage` is `null`. A missing or malformed monitor ID returns `404`.
-
-## Viewing Incidents
-
-```bash
-curl "http://localhost:8080/monitors/MONITOR_ID/incidents?limit=20&offset=0"
-curl http://localhost:8080/monitors/MONITOR_ID/incidents/current
-```
-
-History returns the newest incident first by `started_at`, with incident ID
-breaking timestamp ties. `limit` defaults to 50 and must be 1–100; `offset`
-defaults to 0 and must be nonnegative. Invalid or empty pagination values
-return `400`. An existing monitor with no incidents returns `200` and `[]`.
-The current route returns the open incident with `200`, or `204 No Content`
-with an empty body if none is open. Both routes return `404` for a missing or
-malformed monitor ID.
-
-Incident responses include `id`, `monitor_id`, `started_at`, `resolved_at`,
-`is_open`, `duration_ms`, `failure_type`, and `status_code`. The initial
-`failure_message` appears when present. An open incident has `resolved_at: null`
-and `duration_ms` measures elapsed time from its start to the response. A
-resolved incident's duration is fixed at `resolved_at - started_at`. Negative
-durations are reported as 0. Status 0 means no HTTP response was recorded for
-the initial failure. Repeated failed checks keep the same incident and its
-initial failure context.
-
-## Testing Failure Detection
-
-Horus considers a check successful when the returned HTTP status matches the configured expected status.
-
-For example, this endpoint always returns HTTP 500:
-
-```text
-https://httpbin.org/status/500
-```
-
-Create a monitor expecting HTTP 200:
-
-```bash
-curl -X POST http://localhost:8080/monitors \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "HTTPBin Failure",
-    "url": "https://httpbin.org/status/500",
-    "interval_seconds": 10,
-    "timeout_seconds": 5,
-    "expected_status": 200
-  }'
-```
-
-Horus records the result as an HTTP failure:
-
-```json
-{
-  "status_code": 500,
-  "success": false,
-  "failure_type": "http"
-}
-```
+A database migrated manually before `schema_migrations` existed may need an
+intentional baseline or a fresh volume. The runner does not infer completed
+versions from existing tables and has no rollback command.
 
 ## API
 
-| Method   | Endpoint                 | Description       |
-| -------- | ------------------------ | ----------------- |
-| `GET`    | `/health`                | Process liveness check |
-| `GET`    | `/ready`                 | PostgreSQL and Redis readiness check |
-| `POST`   | `/monitors`              | Create a monitor (`201`; invalid request `400`) |
-| `GET`    | `/monitors`              | List monitors (`200`) |
-| `GET`    | `/monitors/{id}`         | Get a monitor (`200`; missing or malformed ID `404`) |
-| `DELETE` | `/monitors/{id}`         | Delete a monitor (`204`; missing or malformed ID `404`) |
-| `PATCH`  | `/monitors/{id}/enable`  | Enable a monitor (`204`; missing or malformed ID `404`) |
-| `PATCH`  | `/monitors/{id}/disable` | Disable a monitor (`204`; missing or malformed ID `404`) |
-| `GET`    | `/monitors/{id}/checks`  | Get check history |
-| `GET`    | `/monitors/{id}/summary` | Get check summary |
+All paths are relative to `http://localhost:8080` with the default host port.
 
-Errors produced by Horus API handlers use `Content-Type: application/json` and a single field, for example `{"error":"monitor not found"}`. Invalid JSON, monitor values, or pagination return `400` with a useful message. Missing monitors and malformed monitor IDs return `404`. Unexpected repository failures return `500` with `{"error":"internal server error"}`; internal details are not sent to clients. `/ready` is an operational exception: dependency failure returns `503` with `{"status":"not_ready"}`. Go's default `ServeMux` handles unsupported paths and methods.
+| Method | Path | Success |
+|---|---|---|
+| `GET` | `/health` | `200` process liveness |
+| `GET` | `/ready` | `200` dependency readiness |
+| `POST` | `/monitors` | `201` created monitor |
+| `GET` | `/monitors` | `200` monitor array |
+| `GET` | `/monitors/{id}` | `200` monitor |
+| `DELETE` | `/monitors/{id}` | `204`, empty body |
+| `PATCH` | `/monitors/{id}/enable` | `204`, empty body |
+| `PATCH` | `/monitors/{id}/disable` | `204`, empty body |
+| `GET` | `/monitors/{id}/checks` | `200` check array |
+| `GET` | `/monitors/{id}/summary` | `200` summary |
+| `GET` | `/monitors/{id}/incidents` | `200` incident array |
+| `GET` | `/monitors/{id}/incidents/current` | `200` open incident or `204`, empty body |
 
-## Project Structure
+### Monitors
 
-```text
-horus/
-├── cmd/
-│   ├── migrate/
-│   └── server/
-├── internal/
-│   ├── api/
-│   ├── check/
-│   ├── config/
-│   ├── database/
-│   ├── incident/
-│   ├── migrate/
-│   ├── monitor/
-│   ├── notification/
-│   ├── postgres/
-│   ├── queue/
-│   ├── scheduler/
-│   └── worker/
-├── migrations/
-├── Dockerfile
-├── compose.yaml
-├── go.mod
-└── README.md
+Create a monitor with one JSON object:
+
+```bash
+curl -i -X POST http://localhost:8080/monitors \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Example","url":"https://example.com","interval_seconds":30,"timeout_seconds":5,"expected_status":200}'
 ```
+
+The response includes `id`, `name`, `url`, `interval_seconds`,
+`timeout_seconds`, `expected_status`, and `enabled`. Name must be nonblank;
+URL must be absolute HTTP(S) without embedded credentials; interval and
+timeout must be positive whole seconds that fit the PostgreSQL integer
+columns; expected status must be 100–599. Malformed JSON, unknown fields, and
+trailing JSON are rejected with `400`. DNS and IP safety checks occur when a
+check runs. Missing or malformed UUIDs return `404` for monitor reads,
+deletes, and enable/disable operations.
+
+### Checks and summary
+
+`GET /monitors/{id}/checks` returns newest checks first, breaking equal
+`checked_at` timestamps by ID descending. `limit` defaults to 50 and must be
+1–100; `offset` defaults to 0 and must be nonnegative. Invalid, empty, or
+out-of-range values return `400`. An existing monitor without checks returns
+`200 []`. Check rows include `id`, `monitor_id`, `status_code`,
+`latency_ms`, `success`, `failure_type`, `checked_at`, and `error` when
+present. Status 0 means no HTTP response.
+
+`GET /monitors/{id}/summary` returns `total_checks`,
+`successful_checks`, `failed_checks`, `average_latency_ms`,
+`latest_status`, and `uptime_percentage`. Uptime is **successful persisted
+checks ÷ all persisted checks × 100**, rounded to two decimals. It is the
+share of successful checks, not time-weighted availability. Average latency
+is truncated to whole milliseconds. Latest status comes from the newest
+check; 0 means that check had no HTTP response. With no checks, the counts,
+average latency, and latest status are 0, while uptime is `null`.
+
+### Incidents
+
+`GET /monitors/{id}/incidents` uses the same `limit` and `offset` rules as
+check history. It orders newest `started_at` first, then incident ID
+descending; an existing monitor without incidents returns `200 []`.
+`GET /monitors/{id}/incidents/current` returns only the open incident, or
+`204` with no body when none is open.
+
+Incidents expose `id`, `monitor_id`, `started_at`, `resolved_at`,
+`is_open`, `duration_ms`, `failure_type`, `status_code`, and
+`failure_message` when present. The failure context is captured when the
+incident opens; repeated failed checks keep it unchanged. For an open
+incident, `resolved_at` is `null` and duration grows from start to response
+time. For a resolved incident, duration is fixed from start to
+`resolved_at`. Negative durations clamp to zero. Status 0 means no initial
+HTTP response. Missing or malformed monitor IDs return `404` on both check
+and incident routes.
+
+### Errors
+
+Horus handler errors use `Content-Type: application/json` with a single
+field, for example `{"error":"monitor not found"}`. `400` means invalid
+input, `404` means a missing or malformed monitor ID, and unexpected
+repository failures return `500 {"error":"internal server error"}` without
+internal details. Readiness is the deliberate exception: dependency failure
+returns `503 {"status":"not_ready"}`. Unsupported paths and methods use
+Go `http.ServeMux` defaults, which may not use this JSON shape.
+
+## Notifications
+
+Set `HORUS_DISCORD_WEBHOOK_URL` to an absolute HTTP(S) webhook URL without
+embedded credentials to enable Discord notifications. An unset or blank value
+disables them. Startup logs enabled/disabled state without logging the URL.
+
+| Check transition | Discord message |
+|---|---|
+| Healthy → failed; incident opens | One DOWN |
+| Failed → failed; same incident remains open | None |
+| Open incident → successful; incident resolves | One RECOVERED |
+| Healthy → successful | None |
+
+Messages include monitor and incident context, with recovery time and outage
+duration on recovery. A failed webhook delivery does not undo the persisted
+check or incident transition; the worker logs the error. There is no retry or
+durable notification queue. Enabling notifications later does not replay
+transitions that already occurred.
+
+## Health and Readiness
+
+`GET /health` is pure process liveness: `200 {"status":"ok"}` even when
+dependencies are unavailable. `GET /ready` pings PostgreSQL and Redis using
+one shared one-second deadline; it returns `200 {"status":"ready"}` only
+when both respond, otherwise `503 {"status":"not_ready"}`. Responses do not
+expose dependency errors. PostgreSQL and Redis must both be available at
+startup; Horus exits if either initial check fails.
+
+SIGINT and SIGTERM cancel the scheduler and workers. An idle Redis dequeue
+uses a finite one-second blocking wait so workers can exit promptly. After
+joining workers, Horus gives HTTP shutdown up to five seconds.
+
+## Development
+
+Go and local PostgreSQL/Redis are needed for a direct process run. One
+convenient path uses Compose for dependencies only:
+
+```bash
+cp .env.example .env
+docker compose up -d postgres redis
+set -a
+. ./.env
+set +a
+go run ./cmd/migrate
+go run ./cmd/server
+```
+
+The exported `localhost` settings connect to the published dependency
+ports. Horus itself does not load `.env`. Stop the direct server with
+Ctrl+C; stop the dependencies with `docker compose down`.
+
+## Testing and CI
+
+With local PostgreSQL and Redis running and migrations applied:
+
+```bash
+go test ./...
+go test -race ./...
+go vet ./...
+go build ./...
+docker build .
+```
+
+Repository and queue integration tests use real local services. GitHub
+Actions runs on pushes to `main` and pull requests targeting `main`. Its
+single workflow starts healthy PostgreSQL and Redis services, applies
+migrations with `cmd/migrate`, then runs tests, race tests, vet, Go build,
+and Docker build. It does not deploy or publish an image.
+
+## Known Limitations
+
+- Uptime counts check outcomes; it is not time-weighted. Offset pagination
+  can shift when checks or incidents are added between page requests.
+- There are no users, authentication, or monitor ownership; expose the API
+  only in an environment you control. There is no flapping suppression.
+- Redis list jobs have no acknowledgement or recovery protocol. An enqueue
+  followed by a failed `next_check_at` update can create a duplicate job.
+- Check persistence and incident transitions are separate operations. A
+  transition failure can leave an incident temporarily out of sync with a
+  persisted check. Failed Discord delivery is not retried.
+- Readiness checks dependency connectivity, not schema state, scheduler or
+  worker progress, or queued-job delivery. Startup requires both dependencies.
+- Go does not load `.env` automatically. Databases migrated manually before
+  `schema_migrations` may need a baseline or reset. URL safety checks are
+  partial and should be reviewed before accepting untrusted monitor URLs.
 
 ## Project Status
 
-Horus currently has a working end-to-end monitoring pipeline:
-
-```text
-API
- ↓
-PostgreSQL
- ↓
-Scheduler
- ↓
-Redis Queue
-↓
-Worker Pool
- ↓
-HTTP Checker
- ↓
-External URL
- ↓
-Check Result
- ↓
-PostgreSQL
- ↓
-API
-```
-
-The project is currently focused on building the core monitoring infrastructure before adding additional functionality.
+The backend v1 flow is implemented and covered by Go tests and local Compose
+verification. Frontend/dashboard work is the next phase; no frontend,
+authentication, deployment pipeline, or metrics endpoint is implemented.
