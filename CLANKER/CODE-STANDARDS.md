@@ -1,5 +1,16 @@
 # Code Standards
 
+## Frontend conventions
+
+- Keep the frontend in `web/`, separate from Go. Follow `UI-CONTEXT.md` for status language, density, colors, and accessible interaction.
+- Use React Router for implemented routes, TanStack Query for server state, and local React state for dialogs/forms. Avoid a global state store.
+- Keep fetch and JSON error handling in `web/src/lib/api.ts`; put monitor-specific types, requests, validation, and components under `web/src/features/monitors/`.
+- Keep detail queries keyed by monitor ID and resource. Use `null` as the frontend query result for `204` current incident; TanStack Query data cannot be `undefined`. Keep time formatting in `web/src/lib/time.ts`.
+- Keep Overview counts derived from `/monitors`. Bound any per-monitor current-incident scan (currently 12 monitors, concurrency three), label partial coverage, and show an active-incident count only when every monitor was checked successfully. Do not infer health from the enabled flag or add a global incident endpoint for the frontend.
+- Only render data the API actually supplies. Enabled/disabled is configuration, not an uptime or health result. Use labeled inputs, focus-visible styles, and Radix-backed dialogs.
+- Validate with `npm test`, `npm run build` (including TypeScript), and `npm run lint` from `web/`.
+- Production frontend changes belong in `web/Dockerfile` and `web/nginx.conf`: build assets in Node, serve through Nginx, preserve SPA fallback, and strip `/api` when proxying to Horus. Keep normal Compose browser traffic same-origin; do not require CORS. Compose host ports bind to loopback by default.
+
 These conventions describe the current Go code and preferred changes. Security and production features listed as future work should not be mistaken for protections already present.
 
 ## Go and packages

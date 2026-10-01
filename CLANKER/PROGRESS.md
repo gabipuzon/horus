@@ -4,6 +4,10 @@
 
 Horus has an end-to-end core monitoring flow: manage monitors over HTTP, schedule due checks, enqueue jobs in Redis, execute checks with a bounded worker pool, persist checks and incidents in PostgreSQL, and query check and incident data through the API.
 
+Phase 9 frontend is implemented in `web/`: `/` redirects to `/overview`, `/monitors` manages monitors, and `/monitors/:id` shows configuration, check-based summary, response-time chart, first-page checks, current incident, and first-page incident history. Overview shows configuration counts, bounded current-problem visibility, and recent monitor links. The list shows configuration state only. The detail route labels an open incident DOWN and does not infer health when no incident is open.
+
+Phase 10 packages the built frontend with Nginx, serving the React routes and proxying same-origin `/api/*` to Horus. Compose now includes `postgres`, `redis`, `migrate`, `horus`, and `web`; the dashboard defaults to `http://localhost:3000`. Published ports bind to loopback by default. The backend contract is unchanged.
+
 The code is organized by responsibility: `api`, `check`, `config`, `database`, `incident`, `migrate`, `monitor`, `notification`, `postgres`, `queue`, `scheduler`, and `worker` packages under `internal/`.
 
 ## Implemented
@@ -56,8 +60,15 @@ The code is organized by responsibility: `api`, `check`, `config`, `database`, `
 ### Continuous integration
 
 - A single GitHub Actions workflow runs on pushes to `main` and pull requests targeting it, cancelling obsolete runs for the same branch or PR. It grants repository read permission only.
-- PostgreSQL 17 and Redis 8 services use healthchecks. CI applies migrations through `cmd/migrate`, then runs tests, race tests, vet, Go build, and Docker build without a Discord webhook or repository secrets.
+- PostgreSQL 17 and Redis 8 services use healthchecks. CI applies migrations through `cmd/migrate`, then runs Go tests, race tests, vet, and build, frontend tests/lint/build, and both Docker image builds without a Discord webhook or repository secrets.
 - Migration tests keep schema work inside a rolled-back transaction. The Redis queue integration test uses DB 14 so a locally running Horus worker on DB 0 cannot consume its jobs.
+
+### Frontend Phase 9A
+
+- `web/` uses Vite, React, TypeScript, Tailwind CSS, local shadcn/ui style primitives backed by Radix Dialog, React Router, and TanStack Query. `UI-CONTEXT.md` is the visual and UX reference; `UI-DESIGN.md` is not present.
+- One `/monitors` screen has desktop sidebar and compact mobile navigation, a dense list of monitor configuration, a validated create dialog, direct enable/disable actions, and a named delete confirmation. Loading skeletons, empty-state action, page retry, and local mutation errors are implemented.
+- The typed fetch client under `web/src/lib/api.ts` handles Horus JSON errors. Vite proxies same-origin `/api/*` requests to the local Go API with `/api` removed; `VITE_HORUS_API_URL` may select a separate origin when browser CORS permits it. No backend CORS or Compose changes were made.
+- The list deliberately shows only enabled/disabled configuration state. Monitor health, latency, uptime, check history, incidents, and detail screens remain unimplemented in the frontend.
 
 ## Routes
 
@@ -87,6 +98,7 @@ GET    /monitors/{id}/incidents/current
 - Checker uses `http.DefaultClient`; status mismatch is checked against one exact expected status.
 - Offset-based check history pages can shift when new checks arrive between requests.
 - Offset-based incident history pages can shift when incidents open between requests.
+- The production frontend is served by Nginx in Compose, while Vite remains the development path. The monitor list does not show live check status. The unauthenticated app and API bind to loopback by default and need a trusted access layer for remote use.
 
 ## Verification record
 
@@ -112,6 +124,20 @@ For Phase 8E, config tests cover every default, invalid worker counts and ports,
 
 For Phase 8F, the README was consolidated into a complete backend v1 entrypoint and checked against routes, configuration, migrations, Docker/Compose, CI, and tests. A source search found no completed TODO/FIXME comments to remove. `go test ./...`, `go test -race ./...`, `go vet ./...`, `go build ./...`, `git diff --check`, and `docker build .` passed locally. An isolated `docker compose up --build -d` stack reached healthy PostgreSQL, Redis, and Horus states; its migration job exited 0. `/health` and `/ready` returned `200`. A temporary monitor returned `201` on creation and `200` on retrieval, persisted a successful check visible in history and summary, returned `200 []` for incident history and `204` for current incident, and returned `204` on deletion. The isolated containers and test volumes were removed. No blocking backend defect was found; the documented v1 limitations remain. The GitHub-hosted CI workflow has not been observed in this review.
 
-## Next work
+For Phase 9A, frontend tests, TypeScript/production build, and ESLint passed in a Node 22 container. The final test run covered 15 tests across form validation and monitor-page interactions. The live Vite server served the `/monitors` page as HTML and proxied `/api/monitors` to the running Horus API. Headless Firefox screenshots were inspected at desktop and narrow widths; they captured the initial loading state. A manual click-through against the live backend is still pending.
 
-Phases 8A–8F are complete. The backend v1 contract is ready to freeze for frontend/dashboard development; no frontend is implemented yet. Authentication/authorization, queue recovery, telemetry, and durable notification delivery remain future work.
+For Phase 9B, the detail page uses five typed endpoints and independent TanStack queries. It covers monitor 404, per-section skeletons and retries, no-check and no-incident states, semantic history tables, lightweight enable/disable and confirmed delete, and one responsive SVG latency line with failed-check markers. The page uses local time, shared relative/duration formatting, and no extra state library. All 24 frontend tests, build, and lint passed in the local Node 22 image; `git diff --check` passed. A live Horus smoke flow created a healthy monitor that recorded HTTP 200 checks and a populated summary, plus a failing expected-status monitor with failed HTTP checks and an open incident. Headless Firefox BiDi then loaded both detail routes and confirmed the rendered healthy summary/checks and failing DOWN/current-incident/failed-checks/history text. All temporary monitors were deleted. Recovery was not practical because the API has no monitor-edit route and the smoke target's response was fixed. The backend was unchanged.
+
+## Phase 9C
+
+For Phase 9C, `/overview` uses `GET /monitors` for total, enabled, and disabled counts and the eight newest monitor links. It checks current incidents for at most the 12 newest monitors, including disabled monitors whose incident may remain open, with three requests in flight at once. Results are cached for 60 seconds without polling. A partial or failed scan is labeled and does not show a global active-incident count. No healthy count is inferred. Desktop and mobile navigation expose only Overview and Monitors. The monitor-list page error avoids raw response text; the create dialog is reused for Overview onboarding. Horizontal table scrollbars use dark colors, and the mobile header protects the Horus brand from flex shrink. No backend files or contract changed.
+
+Final Phase 9C frontend validation passed in the local Node 22 image: 31 tests, TypeScript/production build, ESLint, and `git diff --check`. A live Compose backend and headless Firefox BiDi pass loaded all three routes, created a temporary failing monitor, observed the same open HTTP incident in Overview and detail, exercised enable/disable and confirmed delete, and removed the temporary monitor. Desktop (1280 px), tablet (800 px), and narrow mobile (375 px) screenshots were inspected; page width did not overflow and tables scrolled within their sections. The preexisting four disabled repository test monitors were left untouched.
+
+## Phase 10 and v1 freeze
+
+Phase 10 adds a Node build stage and Nginx runtime frontend image. Nginx serves static React routes with SPA fallback and forwards same-origin `/api/*` to `horus:8080/*`. Compose now has `postgres`, `redis`, `migrate`, `horus`, and `web`, with health checks for the API and web and loopback-only published ports by default. `HORUS_WEB_PUBLISH_PORT` defaults to 3000. The backend port remains published for local API and development use. CI now runs the frontend install/test/lint/build and builds both images after the existing Go checks. The README is the v1 quick-start and operator entrypoint; real production-rendered screenshots are under `docs/screenshots/`. No backend contract or product feature was added.
+
+Local validation passed: `go test ./...`, `go test -race ./...`, `go vet ./...`, `go build ./...`, 31 frontend tests, frontend lint and build, `docker compose build`, and a fresh isolated five-service `docker compose up --build -d`. The fresh migration job applied four versions; a restart after `docker compose down` applied zero and preserved a temporary monitor and its open incident in PostgreSQL. Through `http://localhost:3000/api`, a safe blocked-loopback target produced persisted failed checks and an incident, while a separate `https://example.com` monitor recorded successful HTTP 200 checks. Direct SPA routes and same-origin API responses returned HTTP 200. Headless Firefox rendered `/overview`, `/monitors`, and a monitor detail route at 1280, 800, and 375 px with no document overflow. `docker compose stop` returned promptly and all five containers exited 0. A final recreate confirmed all published ports bind to `127.0.0.1` and both application containers were healthy. `npm audit --omit=dev --audit-level=moderate` found zero production dependency vulnerabilities. The GitHub-hosted workflow has not been observed in this review.
+
+The v1 feature and packaging scope is complete for trusted self-hosted use. The final diff passed `git diff --check`; temporary monitors and the isolated Compose test volumes were removed. The Phase 10 changes remain in the working tree for review and commit; merge, hosted CI, and an explicitly authorized `v1.0.0` tag are still release steps. Deferred work includes authentication and ownership, complete SSRF protection, queue acknowledgement/recovery, durable notification retry, flapping suppression, global incidents APIs/pages, status pages, advanced telemetry, and cloud deployment. These are not Phase 10 implementation tasks.
