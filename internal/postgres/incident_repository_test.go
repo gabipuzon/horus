@@ -76,6 +76,7 @@ func TestIncidentRepositoryHistoryAndCurrent(t *testing.T) {
 	if current.ResolvedAt != nil || current.FailureType != "network" || current.FailureMessage != "connection refused" || !current.StartedAt.Equal(started.Add(time.Minute)) {
 		t.Fatalf("unexpected current incident: %+v", current)
 	}
+	secondID := current.ID
 	values, err = repository.ListByMonitor(ctx, monitorID, 1, 0)
 	if err != nil || len(values) != 1 || values[0].ID != current.ID {
 		t.Fatalf("expected newest incident on first page, got %v, %v", values, err)
@@ -90,5 +91,39 @@ func TestIncidentRepositoryHistoryAndCurrent(t *testing.T) {
 	current, err = repository.GetOpenByMonitor(ctx, monitorID)
 	if err != nil || current != nil {
 		t.Fatalf("expected no current incident after resolution, got %v, %v", current, err)
+	}
+
+	// A later opening may share a persisted timestamp with a resolved incident.
+	// History must use the same stable UUID tie-breaker on every read.
+	tiedAt := started.Add(time.Minute)
+	third, err := checks.OpenIncident(ctx, incident.Incident{
+		MonitorID: monitorID, StartedAt: tiedAt, FailureType: "network",
+	})
+	if err != nil || third == nil {
+		t.Fatalf("failed to open tied incident: %+v, %v", third, err)
+	}
+	if duplicate, err := checks.OpenIncident(ctx, incident.Incident{
+		MonitorID: monitorID, StartedAt: tiedAt.Add(time.Second), FailureType: "http", StatusCode: 500, FailureMessage: "later failure",
+	}); err != nil || duplicate != nil {
+		t.Fatalf("expected repeated failure to preserve the open incident, got %+v, %v", duplicate, err)
+	}
+	current, err = repository.GetOpenByMonitor(ctx, monitorID)
+	if err != nil || current == nil || current.ID != third.ID || current.ResolvedAt != nil || current.StatusCode != 0 || current.FailureMessage != "" || current.FailureType != "network" {
+		t.Fatalf("expected current open incident with initial empty failure context, got %+v, %v", current, err)
+	}
+	values, err = repository.ListByMonitor(ctx, monitorID, 50, 0)
+	if err != nil || len(values) != 3 {
+		t.Fatalf("expected three incidents, got %+v, %v", values, err)
+	}
+	wantFirst, wantSecond := third.ID, secondID
+	if wantFirst < wantSecond {
+		wantFirst, wantSecond = wantSecond, wantFirst
+	}
+	if values[0].ID != wantFirst || values[1].ID != wantSecond || !values[0].StartedAt.Equal(tiedAt) || !values[1].StartedAt.Equal(tiedAt) {
+		t.Fatalf("expected tied incidents in descending ID order, got %+v", values)
+	}
+	page, err := repository.ListByMonitor(ctx, monitorID, 1, 1)
+	if err != nil || len(page) != 1 || page[0].ID != wantSecond {
+		t.Fatalf("expected stable second page for tied incidents, got %+v, %v", page, err)
 	}
 }
