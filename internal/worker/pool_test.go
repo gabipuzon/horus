@@ -145,6 +145,21 @@ func TestWorkerCancellationStopsBackoff(t *testing.T) {
 	}
 }
 
+func TestIdleWorkerPoolShutdownPromptly(t *testing.T) {
+	checkQueue := &fakeWorkerQueue{jobs: make(chan queue.CheckJob)}
+	pool := NewPool(context.Background(), 3, checkQueue, nil, nil)
+	done := make(chan struct{})
+	go func() {
+		pool.Shutdown()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("idle workers did not exit after cancellation")
+	}
+}
+
 func TestDequeueBackoffResetsAfterSuccess(t *testing.T) {
 	var backoff dequeueBackoff
 	if got := backoff.next(); got != 250*time.Millisecond {

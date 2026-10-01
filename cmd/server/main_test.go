@@ -42,6 +42,29 @@ func TestHealthHandler(t *testing.T) {
 	}
 }
 
+func TestHealthDoesNotCheckDependencies(t *testing.T) {
+	postgres := &testPinger{err: errors.New("postgres unavailable")}
+	redis := &testPinger{err: errors.New("redis unavailable")}
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /health", healthHandler)
+	mux.HandleFunc("GET /ready", readyHandler(postgres, redis))
+
+	for _, path := range []string{"/health", "/ready", "/health"} {
+		recorder := httptest.NewRecorder()
+		mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+		if path == "/health" {
+			if recorder.Code != http.StatusOK || recorder.Body.String() != "{\"status\":\"ok\"}\n" {
+				t.Fatalf("liveness changed with unavailable dependencies: %d %s", recorder.Code, recorder.Body.String())
+			}
+		} else if recorder.Code != http.StatusServiceUnavailable {
+			t.Fatalf("expected failed readiness, got %d", recorder.Code)
+		}
+	}
+	if postgres.calls != 1 || redis.calls != 1 {
+		t.Fatalf("liveness called a dependency: postgres=%d redis=%d", postgres.calls, redis.calls)
+	}
+}
+
 func TestReadyHandlerDependencyStates(t *testing.T) {
 	for _, test := range []struct {
 		name        string
@@ -81,13 +104,17 @@ func TestReadyHandlerDependencyStates(t *testing.T) {
 }
 
 func TestReadyHandlerTimeout(t *testing.T) {
-	postgres := &testPinger{wait: true}
-	redis := &testPinger{}
-	recorder := httptest.NewRecorder()
-	start := time.Now()
-	readyHandler(postgres, redis)(recorder, httptest.NewRequest(http.MethodGet, "/ready", nil))
-	if recorder.Code != http.StatusServiceUnavailable || time.Since(start) > 2*time.Second {
-		t.Fatalf("expected bounded HTTP 503, got %d after %s", recorder.Code, time.Since(start))
+	for _, stalled := range []string{"postgres", "redis"} {
+		t.Run(stalled, func(t *testing.T) {
+			postgres := &testPinger{wait: stalled == "postgres"}
+			redis := &testPinger{wait: stalled == "redis"}
+			recorder := httptest.NewRecorder()
+			start := time.Now()
+			readyHandler(postgres, redis)(recorder, httptest.NewRequest(http.MethodGet, "/ready", nil))
+			if recorder.Code != http.StatusServiceUnavailable || recorder.Body.String() != "{\"status\":\"not_ready\"}\n" || time.Since(start) > 2*time.Second {
+				t.Fatalf("expected bounded HTTP 503, got %d after %s: %s", recorder.Code, time.Since(start), recorder.Body.String())
+			}
+		})
 	}
 }
 

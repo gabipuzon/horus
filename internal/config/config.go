@@ -40,7 +40,7 @@ func Load() (Config, error) {
 	}
 	if cfg.DiscordWebhookURL != "" {
 		webhook, err := url.Parse(cfg.DiscordWebhookURL)
-		if err != nil || (webhook.Scheme != "http" && webhook.Scheme != "https") || webhook.Host == "" || webhook.User != nil {
+		if err != nil || (webhook.Scheme != "http" && webhook.Scheme != "https") || webhook.Hostname() == "" || webhook.User != nil {
 			return Config{}, fmt.Errorf("HORUS_DISCORD_WEBHOOK_URL must be an absolute HTTP or HTTPS URL without credentials")
 		}
 	}
