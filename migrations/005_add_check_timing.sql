@@ -1,0 +1,3 @@
+ALTER TABLE checks
+ADD COLUMN started_at TIMESTAMPTZ,
+ADD COLUMN scheduled_at TIMESTAMPTZ;

@@ -24,6 +24,7 @@ jobs:
       HORUS_DB_NAME: horus
       HORUS_REDIS_HOST: localhost
       HORUS_REDIS_PORT: "6379"
+      HORUS_TEST_INTEGRATION: "1"
       HORUS_DISCORD_WEBHOOK_URL: ""
     services:
       postgres:

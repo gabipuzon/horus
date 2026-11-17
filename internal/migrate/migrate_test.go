@@ -9,6 +9,7 @@ import (
 	"testing/fstest"
 
 	"github.com/gabipuzon/horus/internal/database"
+	"github.com/gabipuzon/horus/internal/testutil"
 	"github.com/gabipuzon/horus/migrations"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -16,9 +17,10 @@ import (
 
 func testSchema(t *testing.T) (context.Context, pgx.Tx) {
 	t.Helper()
+	testutil.RequireIntegration(t)
 	ctx := context.Background()
 	pool, err := database.NewPool(ctx, database.Config{
-		Host: "localhost", Port: "5432", User: "horus", Password: "horus", Name: "horus",
+		Host: testutil.Env("HORUS_DB_HOST", "localhost"), Port: testutil.Env("HORUS_DB_PORT", "5432"), User: testutil.Env("HORUS_DB_USER", "horus"), Password: testutil.Env("HORUS_DB_PASSWORD", "horus"), Name: testutil.Env("HORUS_DB_NAME", "horus"),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +61,7 @@ func TestApplyFreshAndRepeated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(applied, []int{1, 2, 3, 4}) {
+	if !slices.Equal(applied, []int{1, 2, 3, 4, 5}) {
 		t.Fatalf("unexpected applied order: %v", applied)
 	}
 	if !slices.Equal(migrationVersions(t, ctx, tx), applied) {
@@ -76,7 +78,7 @@ func TestApplyFreshAndRepeated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(applied) != 0 || len(migrationVersions(t, ctx, tx)) != 4 {
+	if len(applied) != 0 || len(migrationVersions(t, ctx, tx)) != 5 {
 		t.Fatalf("repeat run changed recorded migrations: %v", applied)
 	}
 }
@@ -98,7 +100,7 @@ func TestApplyPartialSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(applied, []int{3, 4}) || !slices.Equal(migrationVersions(t, ctx, tx), []int{1, 2, 3, 4}) {
+	if !slices.Equal(applied, []int{3, 4, 5}) || !slices.Equal(migrationVersions(t, ctx, tx), []int{1, 2, 3, 4, 5}) {
 		t.Fatalf("unexpected partial migration result: applied=%v recorded=%v", applied, migrationVersions(t, ctx, tx))
 	}
 }

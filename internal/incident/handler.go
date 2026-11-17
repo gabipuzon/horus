@@ -1,4 +1,4 @@
-package api
+package incident
 
 import (
 	"context"
@@ -7,20 +7,20 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/gabipuzon/horus/internal/incident"
+	"github.com/gabipuzon/horus/internal/httpresponse"
 )
 
 type incidentRepository interface {
-	ListByMonitor(ctx context.Context, monitorID string, limit, offset int) ([]incident.Incident, error)
-	GetOpenByMonitor(ctx context.Context, monitorID string) (*incident.Incident, error)
+	ListByMonitor(ctx context.Context, monitorID string, limit, offset int) ([]Incident, error)
+	GetOpenByMonitor(ctx context.Context, monitorID string) (*Incident, error)
 }
 
 type IncidentHandler struct {
 	repository incidentRepository
-	monitors   monitorExistenceRepository
+	monitors   httpresponse.MonitorExistenceRepository
 }
 
-func NewIncidentHandler(repository incidentRepository, monitors monitorExistenceRepository) *IncidentHandler {
+func NewIncidentHandler(repository incidentRepository, monitors httpresponse.MonitorExistenceRepository) *IncidentHandler {
 	return &IncidentHandler{repository: repository, monitors: monitors}
 }
 
@@ -36,7 +36,7 @@ type incidentResponse struct {
 	FailureMessage string  `json:"failure_message,omitempty"`
 }
 
-func newIncidentResponse(value incident.Incident, now time.Time) incidentResponse {
+func newIncidentResponse(value Incident, now time.Time) incidentResponse {
 	end := now
 	var resolvedAt *string
 	if value.ResolvedAt != nil {
@@ -84,16 +84,16 @@ func incidentPagination(r *http.Request) (int, int, bool) {
 func (h *IncidentHandler) ListByMonitor(w http.ResponseWriter, r *http.Request) {
 	limit, offset, valid := incidentPagination(r)
 	if !valid {
-		writeError(w, http.StatusBadRequest, "invalid limit or offset")
+		httpresponse.WriteError(w, http.StatusBadRequest, "invalid limit or offset")
 		return
 	}
-	if !requireMonitor(w, r, h.monitors) {
+	if !httpresponse.RequireMonitor(w, r, h.monitors) {
 		return
 	}
 
 	values, err := h.repository.ListByMonitor(r.Context(), r.PathValue("id"), limit, offset)
 	if err != nil {
-		writeInternalError(w, "list incidents", err)
+		httpresponse.WriteInternalError(w, "list incidents", err)
 		return
 	}
 	response := make([]incidentResponse, 0, len(values))
@@ -103,17 +103,17 @@ func (h *IncidentHandler) ListByMonitor(w http.ResponseWriter, r *http.Request) 
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		logResponseWriteError("list incidents", err)
+		httpresponse.LogResponseWriteError("list incidents", err)
 	}
 }
 
 func (h *IncidentHandler) GetCurrent(w http.ResponseWriter, r *http.Request) {
-	if !requireMonitor(w, r, h.monitors) {
+	if !httpresponse.RequireMonitor(w, r, h.monitors) {
 		return
 	}
 	value, err := h.repository.GetOpenByMonitor(r.Context(), r.PathValue("id"))
 	if err != nil {
-		writeInternalError(w, "get current incident", err)
+		httpresponse.WriteInternalError(w, "get current incident", err)
 		return
 	}
 	if value == nil {
@@ -122,6 +122,6 @@ func (h *IncidentHandler) GetCurrent(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(newIncidentResponse(*value, time.Now())); err != nil {
-		logResponseWriteError("get current incident", err)
+		httpresponse.LogResponseWriteError("get current incident", err)
 	}
 }

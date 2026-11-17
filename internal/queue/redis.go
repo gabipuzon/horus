@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -14,22 +13,12 @@ const CheckQueue = "horus:checks"
 
 const dequeueWait = time.Second
 
-type Config struct {
-	Host string
-	Port string
-}
-
 type Redis struct {
 	client *redis.Client
 }
 
-func NewRedis(config Config) *Redis {
-	return &Redis{
-		client: redis.NewClient(&redis.Options{
-			Addr:                  fmt.Sprintf("%s:%s", config.Host, config.Port),
-			ContextTimeoutEnabled: true,
-		}),
-	}
+func NewRedisClient(client *redis.Client) *Redis {
+	return &Redis{client: client}
 }
 
 func (r *Redis) Ping(ctx context.Context) error {

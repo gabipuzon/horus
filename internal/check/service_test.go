@@ -12,6 +12,7 @@ import (
 	"github.com/gabipuzon/horus/internal/incident"
 	"github.com/gabipuzon/horus/internal/monitor"
 	"github.com/gabipuzon/horus/internal/notification"
+	"github.com/gabipuzon/horus/internal/probe"
 )
 
 type fakeCheckRepository struct {
@@ -101,11 +102,11 @@ func TestCheckServiceCheck(t *testing.T) {
 		t.Fatalf("failed to create monitor: %v", err)
 	}
 
-	checker := NewChecker(server.Client())
-	checker.dialContext = server.Client().Transport.(*http.Transport).DialContext
+	checker := probe.NewChecker(server.Client())
+	checker.AllowPrivateTargets()
 	repository := &fakeCheckRepository{}
 
-	service := NewService(checker, repository, nil)
+	service := NewService(checker, repository, repository, nil)
 
 	result, err := service.Check(
 		context.Background(),
@@ -165,11 +166,11 @@ func TestCheckServiceIncidentLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create monitor: %v", err)
 	}
-	checker := NewChecker(server.Client())
-	checker.dialContext = server.Client().Transport.(*http.Transport).DialContext
+	checker := probe.NewChecker(server.Client())
+	checker.AllowPrivateTargets()
 	repository := &fakeCheckRepository{}
 	notifier := &fakeNotifier{}
-	service := NewService(checker, repository, notifier)
+	service := NewService(checker, repository, repository, notifier)
 
 	for i := 0; i < len(statuses); i++ {
 		if _, err := service.Check(context.Background(), mon); err != nil {
@@ -211,10 +212,10 @@ func TestCheckServiceNotificationFailureKeepsIncidentTransitions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create monitor: %v", err)
 	}
-	checker := NewChecker(target.Client())
-	checker.dialContext = target.Client().Transport.(*http.Transport).DialContext
+	checker := probe.NewChecker(target.Client())
+	checker.AllowPrivateTargets()
 	repository := &fakeCheckRepository{}
-	service := NewService(checker, repository, notification.NewDiscord(webhook.URL, webhook.Client()))
+	service := NewService(checker, repository, repository, notification.NewDiscord(webhook.URL, webhook.Client()))
 	if _, err := service.Check(context.Background(), mon); err == nil || !strings.Contains(err.Error(), "incident was opened but notification failed") {
 		t.Fatalf("expected notification failure after opening incident, got %v", err)
 	}
@@ -239,10 +240,10 @@ func TestCheckServiceWithoutNotifierStillOpensIncident(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create monitor: %v", err)
 	}
-	checker := NewChecker(target.Client())
-	checker.dialContext = target.Client().Transport.(*http.Transport).DialContext
+	checker := probe.NewChecker(target.Client())
+	checker.AllowPrivateTargets()
 	repository := &fakeCheckRepository{}
-	service := NewService(checker, repository, nil)
+	service := NewService(checker, repository, repository, nil)
 	if _, err := service.Check(context.Background(), mon); err != nil {
 		t.Fatalf("check failed without notifier: %v", err)
 	}
@@ -260,10 +261,10 @@ func TestCheckServiceReportsIncidentTransitionFailureAfterPersistingCheck(t *tes
 	if err != nil {
 		t.Fatalf("failed to create monitor: %v", err)
 	}
-	checker := NewChecker(server.Client())
-	checker.dialContext = server.Client().Transport.(*http.Transport).DialContext
+	checker := probe.NewChecker(server.Client())
+	checker.AllowPrivateTargets()
 	repository := &fakeCheckRepository{openErr: context.DeadlineExceeded}
-	service := NewService(checker, repository, nil)
+	service := NewService(checker, repository, repository, nil)
 
 	_, err = service.Check(context.Background(), mon)
 	if err == nil || !strings.Contains(err.Error(), "check result was persisted but incident opening failed") {

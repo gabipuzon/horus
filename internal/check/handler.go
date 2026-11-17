@@ -1,4 +1,4 @@
-package api
+package check
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/gabipuzon/horus/internal/check"
+	"github.com/gabipuzon/horus/internal/httpresponse"
 )
 
 type checkRepository interface {
@@ -16,37 +16,20 @@ type checkRepository interface {
 		monitorID string,
 		limit int,
 		offset int,
-	) ([]check.Record, error)
+	) ([]Record, error)
 }
 
 type checkSummaryRepository interface {
 	GetSummary(
 		ctx context.Context,
 		monitorID string,
-	) (check.Summary, error)
-}
-
-type monitorExistenceRepository interface {
-	Exists(ctx context.Context, id string) (bool, error)
-}
-
-func requireMonitor(w http.ResponseWriter, r *http.Request, repository monitorExistenceRepository) bool {
-	exists, err := repository.Exists(r.Context(), r.PathValue("id"))
-	if err != nil {
-		writeInternalError(w, "find monitor", err)
-		return false
-	}
-	if !exists {
-		writeError(w, http.StatusNotFound, "monitor not found")
-		return false
-	}
-	return true
+	) (Summary, error)
 }
 
 type CheckHandler struct {
 	repository        checkRepository
 	summaryRepository checkSummaryRepository
-	monitors          monitorExistenceRepository
+	monitors          httpresponse.MonitorExistenceRepository
 }
 
 type checkResponse struct {
@@ -72,7 +55,7 @@ type checkSummaryResponse struct {
 func NewCheckHandler(
 	repository checkRepository,
 	summaryRepository checkSummaryRepository,
-	monitors monitorExistenceRepository,
+	monitors httpresponse.MonitorExistenceRepository,
 ) *CheckHandler {
 	return &CheckHandler{
 		repository:        repository,
@@ -81,7 +64,7 @@ func NewCheckHandler(
 	}
 }
 
-func newCheckResponse(check check.Record) checkResponse {
+func newCheckResponse(check Record) checkResponse {
 	return checkResponse{
 		ID:          check.ID,
 		MonitorID:   check.MonitorID,
@@ -107,7 +90,7 @@ func (h *CheckHandler) ListByMonitor(
 	if query.Has("limit") {
 		parsed, err := strconv.Atoi(query.Get("limit"))
 		if err != nil || parsed < 1 || parsed > 100 {
-			writeError(w, http.StatusBadRequest, "limit must be between 1 and 100")
+			httpresponse.WriteError(w, http.StatusBadRequest, "limit must be between 1 and 100")
 			return
 		}
 		limit = parsed
@@ -116,12 +99,12 @@ func (h *CheckHandler) ListByMonitor(
 	if query.Has("offset") {
 		parsed, err := strconv.Atoi(query.Get("offset"))
 		if err != nil || parsed < 0 {
-			writeError(w, http.StatusBadRequest, "offset must not be negative")
+			httpresponse.WriteError(w, http.StatusBadRequest, "offset must not be negative")
 			return
 		}
 		offset = parsed
 	}
-	if !requireMonitor(w, r, h.monitors) {
+	if !httpresponse.RequireMonitor(w, r, h.monitors) {
 		return
 	}
 
@@ -132,7 +115,7 @@ func (h *CheckHandler) ListByMonitor(
 		offset,
 	)
 	if err != nil {
-		writeInternalError(w, "list checks", err)
+		httpresponse.WriteInternalError(w, "list checks", err)
 		return
 	}
 
@@ -145,7 +128,7 @@ func (h *CheckHandler) ListByMonitor(
 	w.Header().Set("Content-Type", "application/json")
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		logResponseWriteError("list checks", err)
+		httpresponse.LogResponseWriteError("list checks", err)
 	}
 }
 
@@ -154,7 +137,7 @@ func (h *CheckHandler) GetSummary(
 	r *http.Request,
 ) {
 	monitorID := r.PathValue("id")
-	if !requireMonitor(w, r, h.monitors) {
+	if !httpresponse.RequireMonitor(w, r, h.monitors) {
 		return
 	}
 
@@ -163,7 +146,7 @@ func (h *CheckHandler) GetSummary(
 		monitorID,
 	)
 	if err != nil {
-		writeInternalError(w, "get check summary", err)
+		httpresponse.WriteInternalError(w, "get check summary", err)
 		return
 	}
 
@@ -179,6 +162,6 @@ func (h *CheckHandler) GetSummary(
 	w.Header().Set("Content-Type", "application/json")
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		logResponseWriteError("get check summary", err)
+		httpresponse.LogResponseWriteError("get check summary", err)
 	}
 }

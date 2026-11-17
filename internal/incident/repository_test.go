@@ -1,4 +1,4 @@
-package postgres
+package incident_test
 
 import (
 	"context"
@@ -6,13 +6,16 @@ import (
 	"time"
 
 	"github.com/gabipuzon/horus/internal/incident"
+	"github.com/gabipuzon/horus/internal/monitor"
+	"github.com/gabipuzon/horus/internal/testutil"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestIncidentRepositoryHistoryAndCurrent(t *testing.T) {
+	testutil.RequireIntegration(t)
 	ctx := context.Background()
-	db, err := pgxpool.New(ctx, "postgres://horus:horus@localhost:5432/horus")
+	db, err := pgxpool.New(ctx, testutil.DatabaseURL())
 	if err != nil {
 		t.Fatalf("failed to connect to database: %v", err)
 	}
@@ -28,7 +31,7 @@ func TestIncidentRepositoryHistoryAndCurrent(t *testing.T) {
 	}
 	defer db.Exec(ctx, `DELETE FROM monitors WHERE id = $1`, monitorID)
 
-	monitors := NewMonitorRepository(db)
+	monitors := monitor.NewRepository(db)
 	for _, test := range []struct {
 		id   string
 		want bool
@@ -43,7 +46,7 @@ func TestIncidentRepositoryHistoryAndCurrent(t *testing.T) {
 		}
 	}
 
-	repository := NewIncidentRepository(db)
+	repository := incident.NewRepository(db)
 	values, err := repository.ListByMonitor(ctx, monitorID, 50, 0)
 	if err != nil || len(values) != 0 {
 		t.Fatalf("expected empty incident history, got %v, %v", values, err)
@@ -53,7 +56,7 @@ func TestIncidentRepositoryHistoryAndCurrent(t *testing.T) {
 		t.Fatalf("expected no current incident, got %v, %v", current, err)
 	}
 
-	checks := NewCheckRepository(db)
+	checks := incident.NewRepository(db)
 	started := time.Now().Add(-2 * time.Minute).Truncate(time.Microsecond)
 	if opened, err := checks.OpenIncident(ctx, incident.Incident{
 		MonitorID: monitorID, StartedAt: started, FailureType: "http", StatusCode: 503,
@@ -125,5 +128,104 @@ func TestIncidentRepositoryHistoryAndCurrent(t *testing.T) {
 	page, err := repository.ListByMonitor(ctx, monitorID, 1, 1)
 	if err != nil || len(page) != 1 || page[0].ID != wantSecond {
 		t.Fatalf("expected stable second page for tied incidents, got %+v, %v", page, err)
+	}
+}
+
+func TestIncidentRepositoryLifecycle(t *testing.T) {
+	testutil.RequireIntegration(t)
+	ctx := context.Background()
+	db, err := pgxpool.New(ctx, testutil.DatabaseURL())
+	if err != nil {
+		t.Fatalf("failed to connect to database: %v", err)
+	}
+	defer db.Close()
+
+	repository := incident.NewRepository(db)
+	monitorID := "00000000-0000-0000-0000-000000000004"
+	_, err = db.Exec(ctx, `
+		INSERT INTO monitors (id, name, url, interval_seconds, timeout_seconds, expected_status, enabled, created_at, updated_at)
+		VALUES ($1, 'Incident Test', 'https://example.com', 60, 5, 200, true, NOW(), NOW())
+		ON CONFLICT (id) DO NOTHING
+	`, monitorID)
+	if err != nil {
+		t.Fatalf("failed to create test monitor: %v", err)
+	}
+	_, err = db.Exec(ctx, `DELETE FROM incidents WHERE monitor_id = $1`, monitorID)
+	if err != nil {
+		t.Fatalf("failed to clean test incidents: %v", err)
+	}
+
+	first := incident.Incident{
+		MonitorID:      monitorID,
+		StartedAt:      time.Now().Add(-time.Minute).Truncate(time.Microsecond),
+		FailureType:    "http",
+		StatusCode:     503,
+		FailureMessage: "unexpected status",
+	}
+	opened, err := repository.OpenIncident(ctx, first)
+	if err != nil || opened == nil {
+		t.Fatalf("failed to open incident: %v", err)
+	}
+	first.FailureType = "network"
+	first.StatusCode = 0
+	first.FailureMessage = "later failure"
+	opened, err = repository.OpenIncident(ctx, first)
+	if err != nil || opened != nil {
+		t.Fatalf("failed to keep incident open: %v", err)
+	}
+
+	var id, failureType, failureMessage string
+	var statusCode int
+	var startedAt time.Time
+	var resolvedAt *time.Time
+	err = db.QueryRow(ctx, `
+		SELECT id, started_at, resolved_at, failure_type, status_code, failure_message
+		FROM incidents WHERE monitor_id = $1 AND resolved_at IS NULL
+	`, monitorID).Scan(&id, &startedAt, &resolvedAt, &failureType, &statusCode, &failureMessage)
+	if err != nil {
+		t.Fatalf("failed to query open incident: %v", err)
+	}
+	if resolvedAt != nil || failureType != "http" || statusCode != 503 || failureMessage != "unexpected status" {
+		t.Fatalf("expected original open incident context to remain, got resolved=%v type=%q status=%d message=%q", resolvedAt, failureType, statusCode, failureMessage)
+	}
+	if !startedAt.Equal(first.StartedAt) {
+		t.Fatalf("expected incident start %s, got %s", first.StartedAt, startedAt)
+	}
+	var count int
+	if err := db.QueryRow(ctx, `SELECT COUNT(*) FROM incidents WHERE monitor_id = $1`, monitorID).Scan(&count); err != nil {
+		t.Fatalf("failed to count incidents: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected repeated failure to retain one incident, got %d", count)
+	}
+
+	resolved, err := repository.ResolveIncident(ctx, monitorID)
+	if err != nil || resolved == nil {
+		t.Fatalf("failed to resolve incident: %v", err)
+	}
+	if resolved.ID != id || resolved.ResolvedAt == nil {
+		t.Fatalf("expected resolved transition for incident %q, got %+v", id, resolved)
+	}
+	if unchanged, err := repository.ResolveIncident(ctx, monitorID); err != nil || unchanged != nil {
+		t.Fatalf("expected no second resolution transition, got %+v, %v", unchanged, err)
+	}
+	var resolvedID string
+	if err := db.QueryRow(ctx, `SELECT id FROM incidents WHERE monitor_id = $1 AND resolved_at IS NOT NULL`, monitorID).Scan(&resolvedID); err != nil {
+		t.Fatalf("failed to query resolved incident: %v", err)
+	}
+	if resolvedID != id {
+		t.Fatalf("expected incident %q to resolve, got %q", id, resolvedID)
+	}
+
+	first.StartedAt = time.Now()
+	opened, err = repository.OpenIncident(ctx, first)
+	if err != nil || opened == nil {
+		t.Fatalf("failed to open subsequent incident: %v", err)
+	}
+	if err := db.QueryRow(ctx, `SELECT COUNT(*) FROM incidents WHERE monitor_id = $1`, monitorID).Scan(&count); err != nil {
+		t.Fatalf("failed to count incidents after reopening: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("expected a new incident after resolution, got %d incidents", count)
 	}
 }

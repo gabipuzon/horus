@@ -1,4 +1,4 @@
-package api
+package httpresponse
 
 import (
 	"bytes"
@@ -38,7 +38,7 @@ func TestWriteError(t *testing.T) {
 		{http.StatusInternalServerError, "internal server error"},
 	} {
 		recorder := httptest.NewRecorder()
-		writeError(recorder, test.status, test.message)
+		WriteError(recorder, test.status, test.message)
 		assertJSONError(t, recorder, test.status, test.message)
 	}
 }
@@ -50,7 +50,7 @@ func TestWriteInternalErrorLogsContextWithoutSecrets(t *testing.T) {
 	t.Cleanup(func() { log.SetOutput(previous) })
 
 	recorder := httptest.NewRecorder()
-	writeInternalError(recorder, "list checks", errors.New("postgres password=secret"))
+	WriteInternalError(recorder, "list checks", errors.New("postgres password=secret"))
 	assertJSONError(t, recorder, http.StatusInternalServerError, "internal server error")
 	if !strings.Contains(output.String(), "list checks failed") || strings.Contains(output.String(), "secret") {
 		t.Fatalf("expected operation without credentials in log, got %q", output.String())

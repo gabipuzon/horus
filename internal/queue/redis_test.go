@@ -7,14 +7,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gabipuzon/horus/internal/testutil"
 	goredis "github.com/redis/go-redis/v9"
 )
 
 func TestRedisPing(t *testing.T) {
-	redis := NewRedis(Config{
-		Host: "localhost",
-		Port: "6379",
-	})
+	testutil.RequireIntegration(t)
+	redis := NewRedisClient(goredis.NewClient(&goredis.Options{Addr: testutil.RedisAddress(), ContextTimeoutEnabled: true}))
 	defer redis.Close()
 
 	if err := redis.Ping(context.Background()); err != nil {
@@ -41,7 +40,7 @@ func TestRedisPingRespectsContextDeadline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := NewRedis(Config{Host: host, Port: port})
+	r := NewRedisClient(goredis.NewClient(&goredis.Options{Addr: net.JoinHostPort(host, port), ContextTimeoutEnabled: true}))
 	defer r.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
@@ -55,7 +54,8 @@ func TestRedisPingRespectsContextDeadline(t *testing.T) {
 }
 
 func TestRedisDequeueStopsAfterCancellation(t *testing.T) {
-	r := &Redis{client: goredis.NewClient(&goredis.Options{Addr: "localhost:6379", DB: 15})}
+	testutil.RequireIntegration(t)
+	r := &Redis{client: goredis.NewClient(&goredis.Options{Addr: testutil.RedisAddress(), DB: 15})}
 	defer r.Close()
 	if err := r.client.Del(context.Background(), CheckQueue).Err(); err != nil {
 		t.Fatalf("failed to clear isolated test queue: %v", err)
@@ -79,10 +79,11 @@ func TestRedisDequeueStopsAfterCancellation(t *testing.T) {
 }
 
 func TestRedisCheckQueue(t *testing.T) {
+	testutil.RequireIntegration(t)
 	ctx := context.Background()
 
 	// Keep queue integration tests away from the application's live Redis DB.
-	redis := &Redis{client: goredis.NewClient(&goredis.Options{Addr: "localhost:6379", DB: 14})}
+	redis := &Redis{client: goredis.NewClient(&goredis.Options{Addr: testutil.RedisAddress(), DB: 14})}
 	defer redis.Close()
 
 	if err := redis.client.Del(ctx, CheckQueue).Err(); err != nil {

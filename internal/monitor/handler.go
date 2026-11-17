@@ -1,4 +1,4 @@
-package api
+package monitor
 
 import (
 	"context"
@@ -8,13 +8,13 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gabipuzon/horus/internal/monitor"
+	"github.com/gabipuzon/horus/internal/httpresponse"
 )
 
 type monitorRepository interface {
-	Create(ctx context.Context, m *monitor.Monitor) error
-	List(ctx context.Context) ([]*monitor.Monitor, error)
-	GetByID(ctx context.Context, id string) (*monitor.Monitor, error)
+	Create(ctx context.Context, m *Monitor) error
+	List(ctx context.Context) ([]*Monitor, error)
+	GetByID(ctx context.Context, id string) (*Monitor, error)
 	Delete(ctx context.Context, id string) error
 	SetEnabled(ctx context.Context, id string, enabled bool) error
 }
@@ -47,7 +47,7 @@ func NewMonitorHandler(repository monitorRepository) *MonitorHandler {
 	}
 }
 
-func newMonitorResponse(m *monitor.Monitor) monitorResponse {
+func newMonitorResponse(m *Monitor) monitorResponse {
 	return monitorResponse{
 		ID:             m.ID,
 		Name:           m.Name,
@@ -64,22 +64,22 @@ func (h *MonitorHandler) Create(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&request); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		httpresponse.WriteError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 	var extra any
 	if err := decoder.Decode(&extra); err != io.EOF {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		httpresponse.WriteError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 	// The schema stores these values as signed 32-bit seconds, and this bound
 	// also keeps the conversion to time.Duration from overflowing.
 	if request.Interval > 1<<31-1 || request.Timeout > 1<<31-1 {
-		writeError(w, http.StatusBadRequest, "monitor interval or timeout is too large")
+		httpresponse.WriteError(w, http.StatusBadRequest, "monitor interval or timeout is too large")
 		return
 	}
 
-	m, err := monitor.New(
+	m, err := New(
 		request.Name,
 		request.URL,
 		time.Duration(request.Interval)*time.Second,
@@ -87,12 +87,12 @@ func (h *MonitorHandler) Create(w http.ResponseWriter, r *http.Request) {
 		request.ExpectedStatus,
 	)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		httpresponse.WriteError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	if err := h.repository.Create(r.Context(), m); err != nil {
-		writeInternalError(w, "create monitor", err)
+		httpresponse.WriteInternalError(w, "create monitor", err)
 		return
 	}
 
@@ -102,14 +102,14 @@ func (h *MonitorHandler) Create(w http.ResponseWriter, r *http.Request) {
 	response := newMonitorResponse(m)
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		logResponseWriteError("create monitor", err)
+		httpresponse.LogResponseWriteError("create monitor", err)
 	}
 }
 
 func (h *MonitorHandler) List(w http.ResponseWriter, r *http.Request) {
 	monitors, err := h.repository.List(r.Context())
 	if err != nil {
-		writeInternalError(w, "list monitors", err)
+		httpresponse.WriteInternalError(w, "list monitors", err)
 		return
 	}
 
@@ -122,7 +122,7 @@ func (h *MonitorHandler) List(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		logResponseWriteError("list monitors", err)
+		httpresponse.LogResponseWriteError("list monitors", err)
 	}
 }
 
@@ -138,7 +138,7 @@ func (h *MonitorHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	if err := json.NewEncoder(w).Encode(newMonitorResponse(m)); err != nil {
-		logResponseWriteError("get monitor", err)
+		httpresponse.LogResponseWriteError("get monitor", err)
 	}
 }
 
@@ -176,9 +176,9 @@ func (h *MonitorHandler) Disable(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeMonitorError(w http.ResponseWriter, err error, operation string) {
-	if errors.Is(err, monitor.ErrNotFound) {
-		writeError(w, http.StatusNotFound, "monitor not found")
+	if errors.Is(err, ErrNotFound) {
+		httpresponse.WriteError(w, http.StatusNotFound, "monitor not found")
 		return
 	}
-	writeInternalError(w, operation, err)
+	httpresponse.WriteInternalError(w, operation, err)
 }

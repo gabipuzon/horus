@@ -11,6 +11,7 @@ import (
 	"github.com/gabipuzon/horus/internal/check"
 	"github.com/gabipuzon/horus/internal/incident"
 	"github.com/gabipuzon/horus/internal/monitor"
+	"github.com/gabipuzon/horus/internal/probe"
 	"github.com/gabipuzon/horus/internal/queue"
 )
 
@@ -90,7 +91,7 @@ func TestWorkerRetriesDequeueFailureAndProcessesNextJob(t *testing.T) {
 		t.Fatalf("failed to create monitor: %v", err)
 	}
 	checkRepository := &fakeWorkerCheckRepository{called: make(chan struct{}, 1)}
-	checkService := check.NewService(check.NewChecker(http.DefaultClient), checkRepository, nil)
+	checkService := check.NewService(probe.NewChecker(http.DefaultClient), checkRepository, checkRepository, nil)
 	checkQueue := &fakeWorkerQueue{
 		results: make(chan workerDequeueResult, 2),
 		calls:   make(chan struct{}, 3),
@@ -212,8 +213,8 @@ func TestCheckWorkerPoolProcessesQueuedMonitor(t *testing.T) {
 		called: make(chan struct{}, 1),
 	}
 
-	checker := check.NewChecker(http.DefaultClient)
-	checkService := check.NewService(checker, checkRepository, nil)
+	checker := probe.NewChecker(http.DefaultClient)
+	checkService := check.NewService(checker, checkRepository, checkRepository, nil)
 
 	checkQueue := &fakeWorkerQueue{
 		jobs: make(chan queue.CheckJob, 1),
@@ -251,5 +252,36 @@ func TestCheckWorkerPoolProcessesQueuedMonitor(t *testing.T) {
 			m.ID,
 			checkRepository.monitorID,
 		)
+	}
+}
+
+func TestWorkerSkipsQueuedJobForDisabledMonitor(t *testing.T) {
+	m, err := monitor.New("Disabled", "https://example.com", time.Minute, 5*time.Second, 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Enabled = false
+
+	checks := &fakeWorkerCheckRepository{called: make(chan struct{}, 1)}
+	service := check.NewService(probe.NewChecker(http.DefaultClient), checks, checks, nil)
+	jobs := &fakeWorkerQueue{
+		jobs:  make(chan queue.CheckJob, 1),
+		calls: make(chan struct{}, 2),
+	}
+	jobs.jobs <- queue.CheckJob{MonitorID: m.ID}
+	pool := NewPool(context.Background(), 1, jobs, &fakeWorkerMonitorRepository{monitor: m}, service)
+	defer pool.Shutdown()
+
+	for i := 0; i < 2; i++ {
+		select {
+		case <-jobs.calls:
+		case <-time.After(time.Second):
+			t.Fatal("worker did not consume the queued job")
+		}
+	}
+	select {
+	case <-checks.called:
+		t.Fatal("disabled monitor produced a check")
+	default:
 	}
 }

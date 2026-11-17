@@ -1,4 +1,4 @@
-package postgres
+package monitor_test
 
 import (
 	"context"
@@ -7,18 +7,20 @@ import (
 	"time"
 
 	"github.com/gabipuzon/horus/internal/monitor"
+	"github.com/gabipuzon/horus/internal/testutil"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestMonitorRepositoryMissingAndAffectedRows(t *testing.T) {
+	testutil.RequireIntegration(t)
 	ctx := context.Background()
-	db, err := pgxpool.New(ctx, "postgres://horus:horus@localhost:5432/horus")
+	db, err := pgxpool.New(ctx, testutil.DatabaseURL())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	repository := NewMonitorRepository(db)
+	repository := monitor.NewRepository(db)
 
 	m, err := monitor.New("Repository Test", "https://example.com", time.Minute, 5*time.Second, 200)
 	if err != nil {

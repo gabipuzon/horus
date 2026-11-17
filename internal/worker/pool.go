@@ -90,8 +90,11 @@ func (p *Pool) worker() {
 			)
 			continue
 		}
+		if !m.Enabled {
+			continue
+		}
 
-		if _, err := p.checkService.Check(p.ctx, m); err != nil {
+		if _, err := p.checkService.CheckScheduled(p.ctx, m, job.ScheduledAt); err != nil {
 			if p.ctx.Err() != nil {
 				return
 			}

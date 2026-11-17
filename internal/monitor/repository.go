@@ -1,21 +1,20 @@
-package postgres
+package monitor
 
 import (
 	"context"
 	"errors"
 	"time"
 
-	"github.com/gabipuzon/horus/internal/monitor"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type MonitorRepository struct {
+type Repository struct {
 	db *pgxpool.Pool
 }
 
-func (r *MonitorRepository) Exists(ctx context.Context, id string) (bool, error) {
+func (r *Repository) Exists(ctx context.Context, id string) (bool, error) {
 	if _, err := uuid.Parse(id); err != nil {
 		return false, nil
 	}
@@ -25,15 +24,15 @@ func (r *MonitorRepository) Exists(ctx context.Context, id string) (bool, error)
 	return exists, err
 }
 
-func NewMonitorRepository(db *pgxpool.Pool) *MonitorRepository {
-	return &MonitorRepository{
+func NewRepository(db *pgxpool.Pool) *Repository {
+	return &Repository{
 		db: db,
 	}
 }
 
-func (r *MonitorRepository) Create(
+func (r *Repository) Create(
 	ctx context.Context,
-	m *monitor.Monitor,
+	m *Monitor,
 ) error {
 	_, err := r.db.Exec(
 		ctx,
@@ -67,9 +66,9 @@ func (r *MonitorRepository) Create(
 	return err
 }
 
-func (r *MonitorRepository) List(
+func (r *Repository) List(
 	ctx context.Context,
-) ([]*monitor.Monitor, error) {
+) ([]*Monitor, error) {
 	rows, err := r.db.Query(
 		ctx,
 		`
@@ -93,10 +92,10 @@ func (r *MonitorRepository) List(
 	}
 	defer rows.Close()
 
-	var monitors []*monitor.Monitor
+	var monitors []*Monitor
 
 	for rows.Next() {
-		var m monitor.Monitor
+		var m Monitor
 		var intervalSeconds int
 		var timeoutSeconds int
 
@@ -128,15 +127,15 @@ func (r *MonitorRepository) List(
 	return monitors, nil
 }
 
-func (r *MonitorRepository) GetByID(
+func (r *Repository) GetByID(
 	ctx context.Context,
 	id string,
-) (*monitor.Monitor, error) {
+) (*Monitor, error) {
 	if _, err := uuid.Parse(id); err != nil {
-		return nil, monitor.ErrNotFound
+		return nil, ErrNotFound
 	}
 
-	var m monitor.Monitor
+	var m Monitor
 	var intervalSeconds int
 	var timeoutSeconds int
 
@@ -172,7 +171,7 @@ func (r *MonitorRepository) GetByID(
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, monitor.ErrNotFound
+			return nil, ErrNotFound
 		}
 		return nil, err
 	}
@@ -183,12 +182,12 @@ func (r *MonitorRepository) GetByID(
 	return &m, nil
 }
 
-func (r *MonitorRepository) Delete(
+func (r *Repository) Delete(
 	ctx context.Context,
 	id string,
 ) error {
 	if _, err := uuid.Parse(id); err != nil {
-		return monitor.ErrNotFound
+		return ErrNotFound
 	}
 	tag, err := r.db.Exec(
 		ctx,
@@ -203,18 +202,18 @@ func (r *MonitorRepository) Delete(
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return monitor.ErrNotFound
+		return ErrNotFound
 	}
 	return nil
 }
 
-func (r *MonitorRepository) SetEnabled(
+func (r *Repository) SetEnabled(
 	ctx context.Context,
 	id string,
 	enabled bool,
 ) error {
 	if _, err := uuid.Parse(id); err != nil {
-		return monitor.ErrNotFound
+		return ErrNotFound
 	}
 	tag, err := r.db.Exec(
 		ctx,
@@ -231,12 +230,12 @@ func (r *MonitorRepository) SetEnabled(
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return monitor.ErrNotFound
+		return ErrNotFound
 	}
 	return nil
 }
 
-func (r *MonitorRepository) SetNextCheckAt(
+func (r *Repository) SetNextCheckAt(
 	ctx context.Context,
 	id string,
 	nextCheckAt time.Time,

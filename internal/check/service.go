@@ -8,6 +8,7 @@ import (
 	"github.com/gabipuzon/horus/internal/incident"
 	"github.com/gabipuzon/horus/internal/monitor"
 	"github.com/gabipuzon/horus/internal/notification"
+	"github.com/gabipuzon/horus/internal/probe"
 )
 
 type ResultRepository interface {
@@ -16,24 +17,30 @@ type ResultRepository interface {
 		monitorID string,
 		result Result,
 	) error
+}
+
+type IncidentRepository interface {
 	OpenIncident(ctx context.Context, value incident.Incident) (*incident.Incident, error)
 	ResolveIncident(ctx context.Context, monitorID string) (*incident.Incident, error)
 }
 
 type Service struct {
-	checker    *Checker
+	checker    *probe.Checker
 	repository ResultRepository
+	incidents  IncidentRepository
 	notifier   notification.Notifier
 }
 
 func NewService(
-	checker *Checker,
+	checker *probe.Checker,
 	repository ResultRepository,
+	incidents IncidentRepository,
 	notifier notification.Notifier,
 ) *Service {
 	return &Service{
 		checker:    checker,
 		repository: repository,
+		incidents:  incidents,
 		notifier:   notifier,
 	}
 }
@@ -42,14 +49,19 @@ func (s *Service) Check(
 	ctx context.Context,
 	m *monitor.Monitor,
 ) (Result, error) {
+	return s.CheckScheduled(ctx, m, time.Time{})
+}
+
+func (s *Service) CheckScheduled(ctx context.Context, m *monitor.Monitor, scheduledAt time.Time) (Result, error) {
 	result := s.checker.Check(ctx, m)
+	result.ScheduledAt = scheduledAt
 
 	if err := s.repository.Create(ctx, m.ID, result); err != nil {
 		return result, err
 	}
 
 	if result.Success {
-		resolved, err := s.repository.ResolveIncident(ctx, m.ID)
+		resolved, err := s.incidents.ResolveIncident(ctx, m.ID)
 		if err != nil {
 			return result, fmt.Errorf("check result was persisted but incident resolution failed: %w", err)
 		}
@@ -65,7 +77,7 @@ func (s *Service) Check(
 		if result.Error != nil {
 			failureMessage = result.Error.Error()
 		}
-		opened, err := s.repository.OpenIncident(ctx, incident.Incident{
+		opened, err := s.incidents.OpenIncident(ctx, incident.Incident{
 			MonitorID:      m.ID,
 			StartedAt:      time.Now(),
 			FailureType:    string(result.FailureType),

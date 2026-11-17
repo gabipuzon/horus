@@ -11,7 +11,7 @@ func unsetConfigEnvironment(t *testing.T) {
 	for _, key := range []string{
 		"HORUS_DB_HOST", "HORUS_DB_PORT", "HORUS_DB_USER", "HORUS_DB_PASSWORD", "HORUS_DB_NAME",
 		"HORUS_REDIS_HOST", "HORUS_REDIS_PORT", "HORUS_HTTP_ADDR", "HORUS_WORKER_COUNT",
-		"HORUS_DISCORD_WEBHOOK_URL",
+		"HORUS_DISCORD_WEBHOOK_URL", "HORUS_ALLOW_PRIVATE_TARGETS",
 	} {
 		t.Setenv(key, "")
 		if err := os.Unsetenv(key); err != nil {
@@ -51,7 +51,7 @@ func TestLoadDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	if cfg.DatabaseHost != "localhost" || cfg.DatabasePort != "5432" || cfg.DatabaseUser != "horus" || cfg.DatabasePassword != "horus" || cfg.DatabaseName != "horus" ||
-		cfg.RedisHost != "localhost" || cfg.RedisPort != "6379" || cfg.HTTPAddr != ":8080" || cfg.WorkerCount != 3 || cfg.DiscordWebhookURL != "" {
+		cfg.RedisHost != "localhost" || cfg.RedisPort != "6379" || cfg.HTTPAddr != ":8080" || cfg.WorkerCount != 3 || cfg.AllowPrivateTargets || cfg.DiscordWebhookURL != "" {
 		t.Fatalf("unexpected defaults: %+v", cfg)
 	}
 }
@@ -109,6 +109,7 @@ func TestLoadRejectsInvalidValues(t *testing.T) {
 		{"HORUS_REDIS_PORT", ""}, {"HORUS_REDIS_PORT", "abc"}, {"HORUS_REDIS_PORT", "0"}, {"HORUS_REDIS_PORT", "70000"},
 		{"HORUS_DB_HOST", ""}, {"HORUS_DB_USER", ""}, {"HORUS_DB_NAME", ""},
 		{"HORUS_REDIS_HOST", ""}, {"HORUS_HTTP_ADDR", ""},
+		{"HORUS_ALLOW_PRIVATE_TARGETS", "maybe"},
 	} {
 		t.Run(test.key+"="+test.value, func(t *testing.T) {
 			t.Setenv(test.key, test.value)
@@ -122,5 +123,14 @@ func TestLoadRejectsInvalidValues(t *testing.T) {
 		if _, err := Load(); err != nil {
 			t.Fatalf("worker count %s should be allowed: %v", count, err)
 		}
+	}
+}
+
+func TestLoadAllowsPrivateTargetsOnlyWhenEnabled(t *testing.T) {
+	unsetConfigEnvironment(t)
+	t.Setenv("HORUS_ALLOW_PRIVATE_TARGETS", "true")
+	cfg, err := Load()
+	if err != nil || !cfg.AllowPrivateTargets {
+		t.Fatalf("expected explicit private target opt-in, got %+v, %v", cfg, err)
 	}
 }

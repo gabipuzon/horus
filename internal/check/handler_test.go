@@ -1,4 +1,4 @@
-package api
+package check
 
 import (
 	"context"
@@ -10,12 +10,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gabipuzon/horus/internal/check"
+	"github.com/gabipuzon/horus/internal/testutil"
 )
 
-type fakeCheckRepository struct {
-	checks     []check.Record
-	summary    check.Summary
+type fakeCheckReadRepository struct {
+	checks     []Record
+	summary    Summary
 	missing    bool
 	existsErr  error
 	listErr    error
@@ -25,23 +25,23 @@ type fakeCheckRepository struct {
 	gotOffset  int
 }
 
-func (f *fakeCheckRepository) Exists(ctx context.Context, id string) (bool, error) {
+func (f *fakeCheckReadRepository) Exists(ctx context.Context, id string) (bool, error) {
 	return !f.missing, f.existsErr
 }
 
-func (f *fakeCheckRepository) ListByMonitor(
+func (f *fakeCheckReadRepository) ListByMonitor(
 	ctx context.Context,
 	monitorID string,
 	limit int,
 	offset int,
-) ([]check.Record, error) {
+) ([]Record, error) {
 	f.listCalls++
 	f.gotLimit, f.gotOffset = limit, offset
 	if f.listErr != nil {
 		return nil, f.listErr
 	}
 	if offset >= len(f.checks) {
-		return []check.Record{}, nil
+		return []Record{}, nil
 	}
 
 	end := offset + limit
@@ -54,7 +54,7 @@ func (f *fakeCheckRepository) ListByMonitor(
 }
 
 func TestListChecksEmptyHistory(t *testing.T) {
-	repository := &fakeCheckRepository{}
+	repository := &fakeCheckReadRepository{}
 	request := httptest.NewRequest(http.MethodGet, "/monitors/monitor-1/checks", nil)
 	request.SetPathValue("id", "monitor-1")
 	recorder := httptest.NewRecorder()
@@ -85,7 +85,7 @@ func TestListChecksPagination(t *testing.T) {
 		{name: "negative offset", query: "?offset=-1", wantStatus: http.StatusBadRequest},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			repository := &fakeCheckRepository{}
+			repository := &fakeCheckReadRepository{}
 			request := httptest.NewRequest(http.MethodGet, "/monitors/monitor-1/checks"+test.query, nil)
 			request.SetPathValue("id", "monitor-1")
 			recorder := httptest.NewRecorder()
@@ -105,7 +105,7 @@ func TestListChecksPagination(t *testing.T) {
 				if strings.Contains(test.name, "offset") {
 					message = "offset must not be negative"
 				}
-				assertJSONError(t, recorder, http.StatusBadRequest, message)
+				testutil.AssertJSONError(t, recorder, http.StatusBadRequest, message)
 			}
 		})
 	}
@@ -123,15 +123,15 @@ func TestListChecks(t *testing.T) {
 		time.UTC,
 	)
 
-	repository := &fakeCheckRepository{
-		checks: []check.Record{
+	repository := &fakeCheckReadRepository{
+		checks: []Record{
 			{
 				ID:          "check-1",
 				MonitorID:   "monitor-1",
 				StatusCode:  200,
 				Latency:     150 * time.Millisecond,
 				Success:     true,
-				FailureType: check.FailureNone,
+				FailureType: FailureNone,
 				CheckedAt:   checkedAt,
 			},
 		},
@@ -220,8 +220,8 @@ func TestListChecks(t *testing.T) {
 }
 
 func TestListChecksWithLimit(t *testing.T) {
-	repository := &fakeCheckRepository{
-		checks: []check.Record{
+	repository := &fakeCheckReadRepository{
+		checks: []Record{
 			{ID: "check-1", MonitorID: "monitor-1"},
 			{ID: "check-2", MonitorID: "monitor-1"},
 			{ID: "check-3", MonitorID: "monitor-1"},
@@ -262,8 +262,8 @@ func TestListChecksWithLimit(t *testing.T) {
 }
 
 func TestListChecksWithOffset(t *testing.T) {
-	repository := &fakeCheckRepository{
-		checks: []check.Record{
+	repository := &fakeCheckReadRepository{
+		checks: []Record{
 			{ID: "check-1", MonitorID: "monitor-1"},
 			{ID: "check-2", MonitorID: "monitor-1"},
 			{ID: "check-3", MonitorID: "monitor-1"},
@@ -311,7 +311,7 @@ func TestListChecksWithOffset(t *testing.T) {
 }
 
 func TestListChecksWithInvalidLimit(t *testing.T) {
-	repository := &fakeCheckRepository{}
+	repository := &fakeCheckReadRepository{}
 
 	handler := NewCheckHandler(repository, repository, repository)
 
@@ -337,7 +337,7 @@ func TestListChecksWithInvalidLimit(t *testing.T) {
 }
 
 func TestListChecksWithNegativeOffset(t *testing.T) {
-	repository := &fakeCheckRepository{}
+	repository := &fakeCheckReadRepository{}
 
 	handler := NewCheckHandler(repository, repository, repository)
 
@@ -362,16 +362,16 @@ func TestListChecksWithNegativeOffset(t *testing.T) {
 	}
 }
 
-func (f *fakeCheckRepository) GetSummary(
+func (f *fakeCheckReadRepository) GetSummary(
 	ctx context.Context,
 	monitorID string,
-) (check.Summary, error) {
+) (Summary, error) {
 	return f.summary, f.summaryErr
 }
 
 func TestGetSummary(t *testing.T) {
-	repository := &fakeCheckRepository{
-		summary: check.Summary{
+	repository := &fakeCheckReadRepository{
+		summary: Summary{
 			TotalChecks:      100,
 			SuccessfulChecks: 95,
 			FailedChecks:     5,
@@ -448,7 +448,7 @@ func TestGetSummary(t *testing.T) {
 }
 
 func TestGetSummaryWithoutChecks(t *testing.T) {
-	repository := &fakeCheckRepository{}
+	repository := &fakeCheckReadRepository{}
 	handler := NewCheckHandler(repository, repository, repository)
 	request := httptest.NewRequest(http.MethodGet, "/monitors/monitor-1/summary", nil)
 	request.SetPathValue("id", "monitor-1")
@@ -482,7 +482,7 @@ func TestCheckEndpointsRequireExistingMonitor(t *testing.T) {
 		{name: "repository error", existsErr: errors.New("database unavailable"), want: http.StatusInternalServerError},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			repository := &fakeCheckRepository{missing: test.missing, existsErr: test.existsErr}
+			repository := &fakeCheckReadRepository{missing: test.missing, existsErr: test.existsErr}
 			handler := NewCheckHandler(repository, repository, repository)
 			id := "monitor-1"
 			if test.name == "malformed UUID" {
@@ -503,14 +503,14 @@ func TestCheckEndpointsRequireExistingMonitor(t *testing.T) {
 				if test.want == http.StatusInternalServerError {
 					message = "internal server error"
 				}
-				assertJSONError(t, recorder, test.want, message)
+				testutil.AssertJSONError(t, recorder, test.want, message)
 			}
 		})
 	}
 }
 
 func TestCheckEndpointsHideRepositoryErrors(t *testing.T) {
-	repository := &fakeCheckRepository{
+	repository := &fakeCheckReadRepository{
 		listErr:    errors.New("database password=secret"),
 		summaryErr: errors.New("database password=secret"),
 	}
@@ -526,6 +526,6 @@ func TestCheckEndpointsHideRepositoryErrors(t *testing.T) {
 		request.SetPathValue("id", "monitor-1")
 		recorder := httptest.NewRecorder()
 		endpoint.serve(recorder, request)
-		assertJSONError(t, recorder, http.StatusInternalServerError, "internal server error")
+		testutil.AssertJSONError(t, recorder, http.StatusInternalServerError, "internal server error")
 	}
 }

@@ -9,16 +9,17 @@ import (
 )
 
 type Config struct {
-	DatabaseHost      string
-	DatabasePort      string
-	DatabaseUser      string
-	DatabasePassword  string
-	DatabaseName      string
-	RedisHost         string
-	RedisPort         string
-	HTTPAddr          string
-	WorkerCount       int
-	DiscordWebhookURL string
+	DatabaseHost        string
+	DatabasePort        string
+	DatabaseUser        string
+	DatabasePassword    string
+	DatabaseName        string
+	RedisHost           string
+	RedisPort           string
+	HTTPAddr            string
+	WorkerCount         int
+	AllowPrivateTargets bool
+	DiscordWebhookURL   string
 }
 
 func Load() (Config, error) {
@@ -26,17 +27,22 @@ func Load() (Config, error) {
 	if err != nil || workerCount < 1 || workerCount > 1000 {
 		return Config{}, fmt.Errorf("HORUS_WORKER_COUNT must be an integer between 1 and 1000")
 	}
+	allowPrivateTargets, err := strconv.ParseBool(stringEnv("HORUS_ALLOW_PRIVATE_TARGETS", "false"))
+	if err != nil {
+		return Config{}, fmt.Errorf("HORUS_ALLOW_PRIVATE_TARGETS must be true or false")
+	}
 	cfg := Config{
-		DatabaseHost:      stringEnv("HORUS_DB_HOST", "localhost"),
-		DatabasePort:      stringEnv("HORUS_DB_PORT", "5432"),
-		DatabaseUser:      stringEnv("HORUS_DB_USER", "horus"),
-		DatabasePassword:  stringEnv("HORUS_DB_PASSWORD", "horus"),
-		DatabaseName:      stringEnv("HORUS_DB_NAME", "horus"),
-		RedisHost:         stringEnv("HORUS_REDIS_HOST", "localhost"),
-		RedisPort:         stringEnv("HORUS_REDIS_PORT", "6379"),
-		HTTPAddr:          stringEnv("HORUS_HTTP_ADDR", ":8080"),
-		WorkerCount:       workerCount,
-		DiscordWebhookURL: strings.TrimSpace(stringEnv("HORUS_DISCORD_WEBHOOK_URL", "")),
+		DatabaseHost:        stringEnv("HORUS_DB_HOST", "localhost"),
+		DatabasePort:        stringEnv("HORUS_DB_PORT", "5432"),
+		DatabaseUser:        stringEnv("HORUS_DB_USER", "horus"),
+		DatabasePassword:    stringEnv("HORUS_DB_PASSWORD", "horus"),
+		DatabaseName:        stringEnv("HORUS_DB_NAME", "horus"),
+		RedisHost:           stringEnv("HORUS_REDIS_HOST", "localhost"),
+		RedisPort:           stringEnv("HORUS_REDIS_PORT", "6379"),
+		HTTPAddr:            stringEnv("HORUS_HTTP_ADDR", ":8080"),
+		WorkerCount:         workerCount,
+		AllowPrivateTargets: allowPrivateTargets,
+		DiscordWebhookURL:   strings.TrimSpace(stringEnv("HORUS_DISCORD_WEBHOOK_URL", "")),
 	}
 	if cfg.DiscordWebhookURL != "" {
 		webhook, err := url.Parse(cfg.DiscordWebhookURL)

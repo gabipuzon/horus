@@ -1,4 +1,4 @@
-package check
+package probe
 
 import (
 	"context"
@@ -22,6 +22,8 @@ const (
 )
 
 type Result struct {
+	StartedAt   time.Time
+	ScheduledAt time.Time
 	StatusCode  int
 	Latency     time.Duration
 	Success     bool
@@ -48,10 +50,21 @@ func NewChecker(client *http.Client) *Checker {
 		}
 		return http.ErrUseLastResponse
 	}
-	return &Checker{
+	checker := &Checker{
 		client:      &clientCopy,
 		dialContext: safeDialContext,
 	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		return checker.dialContext(ctx, network, address)
+	}
+	checker.client.Transport = transport
+	return checker
+}
+
+// AllowPrivateTargets is intended for isolated deployments such as local load tests.
+func (c *Checker) AllowPrivateTargets() {
+	c.dialContext = (&net.Dialer{}).DialContext
 }
 
 func (c *Checker) Check(ctx context.Context, m *monitor.Monitor) Result {
@@ -62,7 +75,7 @@ func (c *Checker) Check(ctx context.Context, m *monitor.Monitor) Result {
 
 	parsedURL, err := url.ParseRequestURI(m.URL)
 	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") || parsedURL.Hostname() == "" || parsedURL.User != nil {
-		return Result{Latency: time.Since(start), FailureType: FailureNetwork, Error: errors.New("URL must be an absolute HTTP or HTTPS URL without credentials")}
+		return Result{StartedAt: start, Latency: time.Since(start), FailureType: FailureNetwork, Error: errors.New("URL must be an absolute HTTP or HTTPS URL without credentials")}
 	}
 
 	req, err := http.NewRequestWithContext(
@@ -73,17 +86,14 @@ func (c *Checker) Check(ctx context.Context, m *monitor.Monitor) Result {
 	)
 	if err != nil {
 		return Result{
+			StartedAt:   start,
 			Latency:     time.Since(start),
 			FailureType: FailureNetwork,
 			Error:       err,
 		}
 	}
 
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.DialContext = c.dialContext
-	client := *c.client
-	client.Transport = transport
-	response, err := client.Do(req)
+	response, err := c.client.Do(req)
 	if err != nil {
 		failureType := FailureNetwork
 
@@ -92,6 +102,7 @@ func (c *Checker) Check(ctx context.Context, m *monitor.Monitor) Result {
 		}
 
 		return Result{
+			StartedAt:   start,
 			Latency:     time.Since(start),
 			FailureType: failureType,
 			Error:       err,
@@ -103,6 +114,7 @@ func (c *Checker) Check(ctx context.Context, m *monitor.Monitor) Result {
 	success := response.StatusCode == m.ExpectedStatus
 
 	result := Result{
+		StartedAt:  start,
 		StatusCode: response.StatusCode,
 		Latency:    time.Since(start),
 		Success:    success,

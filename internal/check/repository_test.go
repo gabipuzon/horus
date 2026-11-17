@@ -1,4 +1,4 @@
-package postgres
+package check_test
 
 import (
 	"context"
@@ -6,24 +6,26 @@ import (
 	"time"
 
 	"github.com/gabipuzon/horus/internal/check"
-	"github.com/gabipuzon/horus/internal/incident"
+	"github.com/gabipuzon/horus/internal/monitor"
+	"github.com/gabipuzon/horus/internal/testutil"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestCheckRepositoryCreate(t *testing.T) {
+	testutil.RequireIntegration(t)
 	ctx := context.Background()
 
 	db, err := pgxpool.New(
 		ctx,
-		"postgres://horus:horus@localhost:5432/horus",
+		testutil.DatabaseURL(),
 	)
 	if err != nil {
 		t.Fatalf("failed to connect to database: %v", err)
 	}
 	defer db.Close()
 
-	repository := NewCheckRepository(db)
+	repository := check.NewRepository(db)
 
 	monitorID := "00000000-0000-0000-0000-000000000001"
 
@@ -60,7 +62,11 @@ func TestCheckRepositoryCreate(t *testing.T) {
 		t.Fatalf("failed to create test monitor: %v", err)
 	}
 
+	startedAt := time.Now().UTC().Truncate(time.Microsecond)
+	scheduledAt := startedAt.Add(-2 * time.Second)
 	result := check.Result{
+		StartedAt:   startedAt,
+		ScheduledAt: scheduledAt,
 		StatusCode:  200,
 		Latency:     150 * time.Millisecond,
 		Success:     true,
@@ -73,10 +79,12 @@ func TestCheckRepositoryCreate(t *testing.T) {
 	}
 
 	var (
-		statusCode  int
-		latencyMs   int64
-		success     bool
-		failureType string
+		statusCode        int
+		latencyMs         int64
+		success           bool
+		failureType       string
+		storedStartedAt   time.Time
+		storedScheduledAt time.Time
 	)
 
 	err = db.QueryRow(
@@ -86,7 +94,9 @@ func TestCheckRepositoryCreate(t *testing.T) {
 			status_code,
 			latency_ms,
 			success,
-			failure_type
+			failure_type,
+			started_at,
+			scheduled_at
 		FROM checks
 		WHERE monitor_id = $1
 		ORDER BY checked_at DESC
@@ -98,6 +108,8 @@ func TestCheckRepositoryCreate(t *testing.T) {
 		&latencyMs,
 		&success,
 		&failureType,
+		&storedStartedAt,
+		&storedScheduledAt,
 	)
 	if err != nil {
 		t.Fatalf("failed to query created check: %v", err)
@@ -118,119 +130,25 @@ func TestCheckRepositoryCreate(t *testing.T) {
 	if failureType != "" {
 		t.Fatalf("expected no failure type, got %q", failureType)
 	}
-}
-
-func TestCheckRepositoryIncidentLifecycle(t *testing.T) {
-	ctx := context.Background()
-	db, err := pgxpool.New(ctx, "postgres://horus:horus@localhost:5432/horus")
-	if err != nil {
-		t.Fatalf("failed to connect to database: %v", err)
-	}
-	defer db.Close()
-
-	monitorID := "00000000-0000-0000-0000-000000000004"
-	_, err = db.Exec(ctx, `
-		INSERT INTO monitors (id, name, url, interval_seconds, timeout_seconds, expected_status, enabled, created_at, updated_at)
-		VALUES ($1, 'Incident Test', 'https://example.com', 60, 5, 200, true, NOW(), NOW())
-		ON CONFLICT (id) DO NOTHING
-	`, monitorID)
-	if err != nil {
-		t.Fatalf("failed to create test monitor: %v", err)
-	}
-	_, err = db.Exec(ctx, `DELETE FROM incidents WHERE monitor_id = $1`, monitorID)
-	if err != nil {
-		t.Fatalf("failed to clean test incidents: %v", err)
-	}
-
-	repository := NewCheckRepository(db)
-	first := incident.Incident{
-		MonitorID:      monitorID,
-		StartedAt:      time.Now().Add(-time.Minute).Truncate(time.Microsecond),
-		FailureType:    "http",
-		StatusCode:     503,
-		FailureMessage: "unexpected status",
-	}
-	opened, err := repository.OpenIncident(ctx, first)
-	if err != nil || opened == nil {
-		t.Fatalf("failed to open incident: %v", err)
-	}
-	first.FailureType = "network"
-	first.StatusCode = 0
-	first.FailureMessage = "later failure"
-	opened, err = repository.OpenIncident(ctx, first)
-	if err != nil || opened != nil {
-		t.Fatalf("failed to keep incident open: %v", err)
-	}
-
-	var id, failureType, failureMessage string
-	var statusCode int
-	var startedAt time.Time
-	var resolvedAt *time.Time
-	err = db.QueryRow(ctx, `
-		SELECT id, started_at, resolved_at, failure_type, status_code, failure_message
-		FROM incidents WHERE monitor_id = $1 AND resolved_at IS NULL
-	`, monitorID).Scan(&id, &startedAt, &resolvedAt, &failureType, &statusCode, &failureMessage)
-	if err != nil {
-		t.Fatalf("failed to query open incident: %v", err)
-	}
-	if resolvedAt != nil || failureType != "http" || statusCode != 503 || failureMessage != "unexpected status" {
-		t.Fatalf("expected original open incident context to remain, got resolved=%v type=%q status=%d message=%q", resolvedAt, failureType, statusCode, failureMessage)
-	}
-	if !startedAt.Equal(first.StartedAt) {
-		t.Fatalf("expected incident start %s, got %s", first.StartedAt, startedAt)
-	}
-	var count int
-	if err := db.QueryRow(ctx, `SELECT COUNT(*) FROM incidents WHERE monitor_id = $1`, monitorID).Scan(&count); err != nil {
-		t.Fatalf("failed to count incidents: %v", err)
-	}
-	if count != 1 {
-		t.Fatalf("expected repeated failure to retain one incident, got %d", count)
-	}
-
-	resolved, err := repository.ResolveIncident(ctx, monitorID)
-	if err != nil || resolved == nil {
-		t.Fatalf("failed to resolve incident: %v", err)
-	}
-	if resolved.ID != id || resolved.ResolvedAt == nil {
-		t.Fatalf("expected resolved transition for incident %q, got %+v", id, resolved)
-	}
-	if unchanged, err := repository.ResolveIncident(ctx, monitorID); err != nil || unchanged != nil {
-		t.Fatalf("expected no second resolution transition, got %+v, %v", unchanged, err)
-	}
-	var resolvedID string
-	if err := db.QueryRow(ctx, `SELECT id FROM incidents WHERE monitor_id = $1 AND resolved_at IS NOT NULL`, monitorID).Scan(&resolvedID); err != nil {
-		t.Fatalf("failed to query resolved incident: %v", err)
-	}
-	if resolvedID != id {
-		t.Fatalf("expected incident %q to resolve, got %q", id, resolvedID)
-	}
-
-	first.StartedAt = time.Now()
-	opened, err = repository.OpenIncident(ctx, first)
-	if err != nil || opened == nil {
-		t.Fatalf("failed to open subsequent incident: %v", err)
-	}
-	if err := db.QueryRow(ctx, `SELECT COUNT(*) FROM incidents WHERE monitor_id = $1`, monitorID).Scan(&count); err != nil {
-		t.Fatalf("failed to count incidents after reopening: %v", err)
-	}
-	if count != 2 {
-		t.Fatalf("expected a new incident after resolution, got %d incidents", count)
+	if !storedStartedAt.Equal(startedAt) || !storedScheduledAt.Equal(scheduledAt) {
+		t.Fatalf("stored timing changed: started=%s scheduled=%s", storedStartedAt, storedScheduledAt)
 	}
 }
 
 func TestCheckRepositoryListByMonitor(t *testing.T) {
+	testutil.RequireIntegration(t)
 	ctx := context.Background()
 
 	db, err := pgxpool.New(
 		ctx,
-		"postgres://horus:horus@localhost:5432/horus",
+		testutil.DatabaseURL(),
 	)
 	if err != nil {
 		t.Fatalf("failed to connect to database: %v", err)
 	}
 	defer db.Close()
 
-	repository := NewCheckRepository(db)
+	repository := check.NewRepository(db)
 
 	monitorID := "00000000-0000-0000-0000-000000000002"
 
@@ -350,11 +268,12 @@ func TestCheckRepositoryListByMonitor(t *testing.T) {
 }
 
 func TestCheckRepositoryGetSummary(t *testing.T) {
+	testutil.RequireIntegration(t)
 	ctx := context.Background()
 
 	db, err := pgxpool.New(
 		ctx,
-		"postgres://horus:horus@localhost:5432/horus",
+		testutil.DatabaseURL(),
 	)
 	if err != nil {
 		t.Fatalf("failed to create database pool: %v", err)
@@ -411,7 +330,7 @@ func TestCheckRepositoryGetSummary(t *testing.T) {
 		t.Fatalf("failed to clean test checks: %v", err)
 	}
 
-	repository := NewCheckRepository(db)
+	repository := check.NewRepository(db)
 
 	err = repository.Create(
 		ctx,
@@ -483,8 +402,9 @@ func TestCheckRepositoryGetSummary(t *testing.T) {
 }
 
 func TestCheckRepositoryHistoryAndSummarySemantics(t *testing.T) {
+	testutil.RequireIntegration(t)
 	ctx := context.Background()
-	db, err := pgxpool.New(ctx, "postgres://horus:horus@localhost:5432/horus")
+	db, err := pgxpool.New(ctx, testutil.DatabaseURL())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -500,8 +420,8 @@ func TestCheckRepositoryHistoryAndSummarySemantics(t *testing.T) {
 	}
 	defer db.Exec(ctx, `DELETE FROM monitors WHERE id = $1`, monitorID)
 
-	repository := NewCheckRepository(db)
-	monitors := NewMonitorRepository(db)
+	repository := check.NewRepository(db)
+	monitors := monitor.NewRepository(db)
 	for _, test := range []struct {
 		id   string
 		want bool

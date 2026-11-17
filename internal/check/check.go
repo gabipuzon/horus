@@ -3,6 +3,18 @@ package check
 import (
 	"math"
 	"time"
+
+	"github.com/gabipuzon/horus/internal/probe"
+)
+
+type Result = probe.Result
+type FailureType = probe.FailureType
+
+const (
+	FailureNone    = probe.FailureNone
+	FailureHTTP    = probe.FailureHTTP
+	FailureNetwork = probe.FailureNetwork
+	FailureTimeout = probe.FailureTimeout
 )
 
 type Record struct {
@@ -14,6 +26,8 @@ type Record struct {
 	FailureType FailureType
 	Error       string
 	CheckedAt   time.Time
+	StartedAt   time.Time
+	ScheduledAt time.Time
 }
 
 type Summary struct {

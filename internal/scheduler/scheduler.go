@@ -87,7 +87,8 @@ func (s *Scheduler) schedule(ctx context.Context) ([]*monitor.Monitor, error) {
 			if err := s.queue.EnqueueCheck(
 				ctx,
 				queue.CheckJob{
-					MonitorID: m.ID,
+					MonitorID:   m.ID,
+					ScheduledAt: m.NextCheckAt,
 				},
 			); err != nil {
 				if ctx.Err() != nil {

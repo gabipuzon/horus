@@ -1,33 +1,29 @@
-package postgres
+package check
 
 import (
 	"context"
-	"errors"
 	"time"
 
-	"github.com/gabipuzon/horus/internal/check"
-	"github.com/gabipuzon/horus/internal/incident"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type CheckRepository struct {
+type Repository struct {
 	db *pgxpool.Pool
 }
 
-func NewCheckRepository(db *pgxpool.Pool) *CheckRepository {
-	return &CheckRepository{
+func NewRepository(db *pgxpool.Pool) *Repository {
+	return &Repository{
 		db: db,
 	}
 }
 
-func (r *CheckRepository) Create(
+func (r *Repository) Create(
 	ctx context.Context,
 	monitorID string,
-	result check.Result,
+	result Result,
 ) error {
-	record := check.Record{
+	record := Record{
 		ID:          uuid.NewString(),
 		MonitorID:   monitorID,
 		StatusCode:  result.StatusCode,
@@ -35,10 +31,19 @@ func (r *CheckRepository) Create(
 		Success:     result.Success,
 		FailureType: result.FailureType,
 		CheckedAt:   time.Now(),
+		StartedAt:   result.StartedAt,
+		ScheduledAt: result.ScheduledAt,
 	}
 
 	if result.Error != nil {
 		record.Error = result.Error.Error()
+	}
+	var startedAt, scheduledAt any
+	if !record.StartedAt.IsZero() {
+		startedAt = record.StartedAt
+	}
+	if !record.ScheduledAt.IsZero() {
+		scheduledAt = record.ScheduledAt
 	}
 
 	_, err := r.db.Exec(
@@ -52,9 +57,11 @@ func (r *CheckRepository) Create(
 			success,
 			failure_type,
 			error,
-			checked_at
+			checked_at,
+			started_at,
+			scheduled_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		`,
 		record.ID,
 		record.MonitorID,
@@ -64,71 +71,19 @@ func (r *CheckRepository) Create(
 		record.FailureType,
 		record.Error,
 		record.CheckedAt,
+		startedAt,
+		scheduledAt,
 	)
 
 	return err
 }
 
-func (r *CheckRepository) OpenIncident(
-	ctx context.Context,
-	value incident.Incident,
-) (*incident.Incident, error) {
-	opened, err := scanIncident(r.db.QueryRow(
-		ctx,
-		`
-		INSERT INTO incidents (
-			id,
-			monitor_id,
-			started_at,
-			failure_type,
-			status_code,
-			failure_message
-		)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		ON CONFLICT (monitor_id) WHERE resolved_at IS NULL DO NOTHING
-		RETURNING id, monitor_id, started_at, resolved_at, failure_type, status_code, failure_message
-		`,
-		uuid.NewString(),
-		value.MonitorID,
-		value.StartedAt,
-		value.FailureType,
-		value.StatusCode,
-		value.FailureMessage,
-	))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &opened, nil
-}
-
-func (r *CheckRepository) ResolveIncident(
-	ctx context.Context,
-	monitorID string,
-) (*incident.Incident, error) {
-	resolved, err := scanIncident(r.db.QueryRow(
-		ctx,
-		`UPDATE incidents SET resolved_at = NOW() WHERE monitor_id = $1 AND resolved_at IS NULL
-		 RETURNING id, monitor_id, started_at, resolved_at, failure_type, status_code, failure_message`,
-		monitorID,
-	))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &resolved, nil
-}
-
-func (r *CheckRepository) ListByMonitor(
+func (r *Repository) ListByMonitor(
 	ctx context.Context,
 	monitorID string,
 	limit int,
 	offset int,
-) ([]check.Record, error) {
+) ([]Record, error) {
 	rows, err := r.db.Query(
 		ctx,
 		`
@@ -156,10 +111,10 @@ func (r *CheckRepository) ListByMonitor(
 	}
 	defer rows.Close()
 
-	var checks []check.Record
+	var checks []Record
 
 	for rows.Next() {
-		var check check.Record
+		var check Record
 		var latencyMs int64
 
 		if err := rows.Scan(
@@ -187,11 +142,11 @@ func (r *CheckRepository) ListByMonitor(
 	return checks, nil
 }
 
-func (r *CheckRepository) GetSummary(
+func (r *Repository) GetSummary(
 	ctx context.Context,
 	monitorID string,
-) (check.Summary, error) {
-	var summary check.Summary
+) (Summary, error) {
+	var summary Summary
 	var averageLatencyMs float64
 
 	err := r.db.QueryRow(
@@ -224,7 +179,7 @@ func (r *CheckRepository) GetSummary(
 		&summary.LatestStatus,
 	)
 	if err != nil {
-		return check.Summary{}, err
+		return Summary{}, err
 	}
 
 	summary.AverageLatency = time.Duration(averageLatencyMs) * time.Millisecond

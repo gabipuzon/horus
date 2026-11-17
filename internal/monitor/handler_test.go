@@ -1,4 +1,4 @@
-package api
+package monitor
 
 import (
 	"context"
@@ -10,18 +10,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gabipuzon/horus/internal/monitor"
+	"github.com/gabipuzon/horus/internal/testutil"
 	"github.com/google/uuid"
 )
 
 type fakeMonitorRepository struct {
-	created *monitor.Monitor
+	created *Monitor
 	err     error
 }
 
 func (f *fakeMonitorRepository) Create(
 	ctx context.Context,
-	m *monitor.Monitor,
+	m *Monitor,
 ) error {
 	if f.err != nil {
 		return f.err
@@ -141,7 +141,7 @@ func TestCreateMonitorInvalidRequest(t *testing.T) {
 
 	handler.Create(recorder, request)
 
-	assertJSONError(t, recorder, http.StatusBadRequest, "monitor name is required")
+	testutil.AssertJSONError(t, recorder, http.StatusBadRequest, "monitor name is required")
 }
 
 func TestCreateMonitorRejectsInvalidJSON(t *testing.T) {
@@ -159,7 +159,7 @@ func TestCreateMonitorRejectsInvalidJSON(t *testing.T) {
 			repository := &fakeMonitorRepository{}
 			recorder := httptest.NewRecorder()
 			NewMonitorHandler(repository).Create(recorder, httptest.NewRequest(http.MethodPost, "/monitors", strings.NewReader(test.body)))
-			assertJSONError(t, recorder, http.StatusBadRequest, "invalid request body")
+			testutil.AssertJSONError(t, recorder, http.StatusBadRequest, "invalid request body")
 			if repository.created != nil {
 				t.Fatalf("unexpected response or create for %s: %d %s", test.name, recorder.Code, recorder.Body.String())
 			}
@@ -214,21 +214,21 @@ func TestCreateMonitorRejectsInvalidValues(t *testing.T) {
 
 func (f *fakeMonitorRepository) List(
 	ctx context.Context,
-) ([]*monitor.Monitor, error) {
+) ([]*Monitor, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
 	if f.created == nil {
-		return []*monitor.Monitor{}, nil
+		return []*Monitor{}, nil
 	}
 
-	return []*monitor.Monitor{f.created}, nil
+	return []*Monitor{f.created}, nil
 }
 
 func TestListMonitors(t *testing.T) {
 	repository := &fakeMonitorRepository{}
 
-	createdMonitor, err := monitor.New(
+	createdMonitor, err := New(
 		"Example",
 		"https://example.com",
 		60*time.Second,
@@ -286,16 +286,16 @@ func TestListMonitors(t *testing.T) {
 func (f *fakeMonitorRepository) GetByID(
 	ctx context.Context,
 	id string,
-) (*monitor.Monitor, error) {
+) (*Monitor, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
 	if f.created == nil {
-		return nil, monitor.ErrNotFound
+		return nil, ErrNotFound
 	}
 
 	if f.created.ID != id {
-		return nil, monitor.ErrNotFound
+		return nil, ErrNotFound
 	}
 
 	return f.created, nil
@@ -304,7 +304,7 @@ func (f *fakeMonitorRepository) GetByID(
 func TestGetMonitor(t *testing.T) {
 	repository := &fakeMonitorRepository{}
 
-	createdMonitor, err := monitor.New(
+	createdMonitor, err := New(
 		"Example",
 		"https://example.com",
 		60*time.Second,
@@ -397,11 +397,11 @@ func (f *fakeMonitorRepository) Delete(
 		return f.err
 	}
 	if f.created == nil {
-		return monitor.ErrNotFound
+		return ErrNotFound
 	}
 
 	if f.created.ID != id {
-		return monitor.ErrNotFound
+		return ErrNotFound
 	}
 
 	f.created = nil
@@ -412,7 +412,7 @@ func (f *fakeMonitorRepository) Delete(
 func TestDeleteMonitor(t *testing.T) {
 	repository := &fakeMonitorRepository{}
 
-	createdMonitor, err := monitor.New(
+	createdMonitor, err := New(
 		"Example",
 		"https://example.com",
 		60*time.Second,
@@ -490,11 +490,11 @@ func (f *fakeMonitorRepository) SetEnabled(
 		return f.err
 	}
 	if f.created == nil {
-		return monitor.ErrNotFound
+		return ErrNotFound
 	}
 
 	if f.created.ID != id {
-		return monitor.ErrNotFound
+		return ErrNotFound
 	}
 
 	f.created.Enabled = enabled
@@ -505,7 +505,7 @@ func (f *fakeMonitorRepository) SetEnabled(
 func TestEnableMonitor(t *testing.T) {
 	repository := &fakeMonitorRepository{}
 
-	createdMonitor, err := monitor.New(
+	createdMonitor, err := New(
 		"Example",
 		"https://example.com",
 		60*time.Second,
@@ -551,7 +551,7 @@ func TestEnableMonitor(t *testing.T) {
 func TestDisableMonitor(t *testing.T) {
 	repository := &fakeMonitorRepository{}
 
-	createdMonitor, err := monitor.New(
+	createdMonitor, err := New(
 		"Example",
 		"https://example.com",
 		60*time.Second,
@@ -611,7 +611,7 @@ func TestMonitorMutationNotFound(t *testing.T) {
 			request.SetPathValue("id", id)
 			recorder := httptest.NewRecorder()
 			test.handler(NewMonitorHandler(repository), recorder, request)
-			assertJSONError(t, recorder, http.StatusNotFound, "monitor not found")
+			testutil.AssertJSONError(t, recorder, http.StatusNotFound, "monitor not found")
 		})
 	}
 }
@@ -634,7 +634,7 @@ func TestMalformedMonitorIDReturnsNotFound(t *testing.T) {
 			request.SetPathValue("id", "not-a-uuid")
 			recorder := httptest.NewRecorder()
 			test.handler(NewMonitorHandler(repository), recorder, request)
-			assertJSONError(t, recorder, http.StatusNotFound, "monitor not found")
+			testutil.AssertJSONError(t, recorder, http.StatusNotFound, "monitor not found")
 		})
 	}
 }
@@ -658,7 +658,7 @@ func TestMonitorRepositoryErrorsAreSafe(t *testing.T) {
 			request.SetPathValue("id", id)
 			recorder := httptest.NewRecorder()
 			test.handler(NewMonitorHandler(repository), recorder, request)
-			assertJSONError(t, recorder, http.StatusInternalServerError, "internal server error")
+			testutil.AssertJSONError(t, recorder, http.StatusInternalServerError, "internal server error")
 		})
 	}
 }
@@ -678,7 +678,7 @@ func TestMonitorCreateAndListRepositoryErrorsAreSafe(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			test.serve(recorder, httptest.NewRequest(test.verb, "/monitors", strings.NewReader(test.body)))
-			assertJSONError(t, recorder, http.StatusInternalServerError, "internal server error")
+			testutil.AssertJSONError(t, recorder, http.StatusInternalServerError, "internal server error")
 		})
 	}
 }

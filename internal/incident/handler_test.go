@@ -1,4 +1,4 @@
-package api
+package incident
 
 import (
 	"context"
@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gabipuzon/horus/internal/incident"
+	"github.com/gabipuzon/horus/internal/testutil"
 )
 
 type fakeIncidentRepository struct {
-	values    []incident.Incident
+	values    []Incident
 	listErr   error
 	openErr   error
 	listCalls int
@@ -24,7 +24,7 @@ type fakeIncidentRepository struct {
 
 func (f *fakeIncidentRepository) ListByMonitor(
 	ctx context.Context, monitorID string, limit, offset int,
-) ([]incident.Incident, error) {
+) ([]Incident, error) {
 	f.listCalls++
 	f.gotLimit, f.gotOffset = limit, offset
 	if f.listErr != nil {
@@ -53,7 +53,7 @@ func TestIncidentHistoryPaginationDefaults(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			repository := &fakeIncidentRepository{}
-			handler := NewIncidentHandler(repository, &fakeCheckRepository{})
+			handler := NewIncidentHandler(repository, &fakeMonitorExistenceRepository{})
 			recorder := httptest.NewRecorder()
 			handler.ListByMonitor(recorder, incidentRequest("/monitors/monitor-1/incidents"+test.query))
 			if recorder.Code != http.StatusOK || repository.listCalls != 1 || repository.gotLimit != test.wantLimit || repository.gotOffset != test.wantOffset {
@@ -65,7 +65,7 @@ func TestIncidentHistoryPaginationDefaults(t *testing.T) {
 
 func TestIncidentResponseDurationsAndNullableContext(t *testing.T) {
 	started := time.Date(2026, 9, 25, 13, 0, 0, 0, time.UTC)
-	open := incident.Incident{ID: "open", MonitorID: "monitor-1", StartedAt: started, FailureType: "network"}
+	open := Incident{ID: "open", MonitorID: "monitor-1", StartedAt: started, FailureType: "network"}
 	first := newIncidentResponse(open, started.Add(1500*time.Millisecond))
 	later := newIncidentResponse(open, started.Add(3500*time.Millisecond))
 	if !first.IsOpen || first.ResolvedAt != nil || first.DurationMs != 1500 || later.DurationMs != 3500 {
@@ -83,7 +83,7 @@ func TestIncidentResponseDurationsAndNullableContext(t *testing.T) {
 	}
 
 	resolvedAt := started.Add(2250 * time.Millisecond)
-	resolved := incident.Incident{ID: "resolved", MonitorID: "monitor-1", StartedAt: started, ResolvedAt: &resolvedAt, FailureType: "http", StatusCode: 503, FailureMessage: "initial failure"}
+	resolved := Incident{ID: "resolved", MonitorID: "monitor-1", StartedAt: started, ResolvedAt: &resolvedAt, FailureType: "http", StatusCode: 503, FailureMessage: "initial failure"}
 	a := newIncidentResponse(resolved, started.Add(time.Minute))
 	b := newIncidentResponse(resolved, started.Add(time.Hour))
 	if a.IsOpen || a.ResolvedAt == nil || *a.ResolvedAt != resolvedAt.Format(time.RFC3339Nano) || a.DurationMs != 2250 || b.DurationMs != a.DurationMs || a.FailureMessage != "initial failure" {
@@ -98,7 +98,7 @@ func TestIncidentResponseDurationsAndNullableContext(t *testing.T) {
 
 func (f *fakeIncidentRepository) GetOpenByMonitor(
 	ctx context.Context, monitorID string,
-) (*incident.Incident, error) {
+) (*Incident, error) {
 	if f.openErr != nil {
 		return nil, f.openErr
 	}
@@ -119,11 +119,11 @@ func incidentRequest(path string) *http.Request {
 func TestListIncidents(t *testing.T) {
 	started := time.Date(2026, 9, 25, 13, 0, 0, 0, time.UTC)
 	resolved := started.Add(90 * time.Second)
-	repository := &fakeIncidentRepository{values: []incident.Incident{
+	repository := &fakeIncidentRepository{values: []Incident{
 		{ID: "incident-2", MonitorID: "monitor-1", StartedAt: started.Add(time.Hour), FailureType: "network", FailureMessage: "connection refused"},
 		{ID: "incident-1", MonitorID: "monitor-1", StartedAt: started, ResolvedAt: &resolved, FailureType: "http", StatusCode: 503},
 	}}
-	handler := NewIncidentHandler(repository, &fakeCheckRepository{})
+	handler := NewIncidentHandler(repository, &fakeMonitorExistenceRepository{})
 	request := incidentRequest("/monitors/monitor-1/incidents?limit=1&offset=1")
 	recorder := httptest.NewRecorder()
 	handler.ListByMonitor(recorder, request)
@@ -145,10 +145,10 @@ func TestListIncidents(t *testing.T) {
 
 func TestCurrentIncidentAndEmptyStates(t *testing.T) {
 	started := time.Now().Add(-2 * time.Minute)
-	repository := &fakeIncidentRepository{values: []incident.Incident{{
+	repository := &fakeIncidentRepository{values: []Incident{{
 		ID: "incident-1", MonitorID: "monitor-1", StartedAt: started, FailureType: "network",
 	}}}
-	handler := NewIncidentHandler(repository, &fakeCheckRepository{})
+	handler := NewIncidentHandler(repository, &fakeMonitorExistenceRepository{})
 	recorder := httptest.NewRecorder()
 	handler.GetCurrent(recorder, incidentRequest("/monitors/monitor-1/incidents/current"))
 	if recorder.Code != http.StatusOK {
@@ -168,7 +168,7 @@ func TestCurrentIncidentAndEmptyStates(t *testing.T) {
 	if recorder.Code != http.StatusNoContent || recorder.Body.Len() != 0 {
 		t.Fatalf("expected 204 with no body, got %d and %q", recorder.Code, recorder.Body.String())
 	}
-	repository.values = []incident.Incident{{ID: "resolved", MonitorID: "monitor-1", StartedAt: started, ResolvedAt: &started}}
+	repository.values = []Incident{{ID: "resolved", MonitorID: "monitor-1", StartedAt: started, ResolvedAt: &started}}
 	recorder = httptest.NewRecorder()
 	handler.GetCurrent(recorder, incidentRequest("/monitors/monitor-1/incidents/current"))
 	if recorder.Code != http.StatusNoContent || recorder.Body.Len() != 0 {
@@ -184,7 +184,7 @@ func TestCurrentIncidentAndEmptyStates(t *testing.T) {
 
 func TestIncidentEndpointsRequireExistingMonitor(t *testing.T) {
 	for _, id := range []string{"00000000-0000-0000-0000-000000000000", "not-a-uuid"} {
-		handler := NewIncidentHandler(&fakeIncidentRepository{}, &fakeCheckRepository{missing: true})
+		handler := NewIncidentHandler(&fakeIncidentRepository{}, &fakeMonitorExistenceRepository{missing: true})
 		for _, endpoint := range []struct {
 			path  string
 			serve http.HandlerFunc
@@ -196,23 +196,23 @@ func TestIncidentEndpointsRequireExistingMonitor(t *testing.T) {
 			request.SetPathValue("id", id)
 			recorder := httptest.NewRecorder()
 			endpoint.serve(recorder, request)
-			assertJSONError(t, recorder, http.StatusNotFound, "monitor not found")
+			testutil.AssertJSONError(t, recorder, http.StatusNotFound, "monitor not found")
 		}
 	}
 }
 
 func TestListIncidentsRejectsMalformedPagination(t *testing.T) {
-	handler := NewIncidentHandler(&fakeIncidentRepository{}, &fakeCheckRepository{})
+	handler := NewIncidentHandler(&fakeIncidentRepository{}, &fakeMonitorExistenceRepository{})
 	for _, query := range []string{"?limit=", "?limit=abc", "?limit=0", "?limit=-1", "?limit=101", "?limit=999999", "?offset=", "?offset=abc", "?offset=-1"} {
 		recorder := httptest.NewRecorder()
 		handler.ListByMonitor(recorder, incidentRequest("/monitors/monitor-1/incidents"+query))
-		assertJSONError(t, recorder, http.StatusBadRequest, "invalid limit or offset")
+		testutil.AssertJSONError(t, recorder, http.StatusBadRequest, "invalid limit or offset")
 	}
 }
 
 func TestIncidentRepositoryErrors(t *testing.T) {
 	repository := &fakeIncidentRepository{listErr: errors.New("database password=secret"), openErr: errors.New("database password=secret")}
-	handler := NewIncidentHandler(repository, &fakeCheckRepository{})
+	handler := NewIncidentHandler(repository, &fakeMonitorExistenceRepository{})
 	for _, endpoint := range []struct {
 		path  string
 		serve http.HandlerFunc
@@ -222,12 +222,12 @@ func TestIncidentRepositoryErrors(t *testing.T) {
 	} {
 		recorder := httptest.NewRecorder()
 		endpoint.serve(recorder, incidentRequest(endpoint.path))
-		assertJSONError(t, recorder, http.StatusInternalServerError, "internal server error")
+		testutil.AssertJSONError(t, recorder, http.StatusInternalServerError, "internal server error")
 	}
 }
 
 func TestIncidentEndpointsHideMonitorRepositoryErrors(t *testing.T) {
-	handler := NewIncidentHandler(&fakeIncidentRepository{}, &fakeCheckRepository{existsErr: errors.New("database password=secret")})
+	handler := NewIncidentHandler(&fakeIncidentRepository{}, &fakeMonitorExistenceRepository{existsErr: errors.New("database password=secret")})
 	for _, endpoint := range []struct {
 		path  string
 		serve http.HandlerFunc
@@ -237,6 +237,15 @@ func TestIncidentEndpointsHideMonitorRepositoryErrors(t *testing.T) {
 	} {
 		recorder := httptest.NewRecorder()
 		endpoint.serve(recorder, incidentRequest("/monitors/monitor-1"+endpoint.path))
-		assertJSONError(t, recorder, http.StatusInternalServerError, "internal server error")
+		testutil.AssertJSONError(t, recorder, http.StatusInternalServerError, "internal server error")
 	}
+}
+
+type fakeMonitorExistenceRepository struct {
+	missing   bool
+	existsErr error
+}
+
+func (f *fakeMonitorExistenceRepository) Exists(context.Context, string) (bool, error) {
+	return !f.missing, f.existsErr
 }

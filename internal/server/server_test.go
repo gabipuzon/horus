@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"bytes"
@@ -16,7 +16,7 @@ import (
 	"github.com/gabipuzon/horus/internal/config"
 	"github.com/gabipuzon/horus/internal/database"
 	"github.com/gabipuzon/horus/internal/notification"
-	"github.com/gabipuzon/horus/internal/queue"
+	"github.com/gabipuzon/horus/internal/testutil"
 )
 
 type testPinger struct {
@@ -119,15 +119,16 @@ func TestReadyHandlerTimeout(t *testing.T) {
 }
 
 func TestReadyHandlerWithLocalDependencies(t *testing.T) {
+	testutil.RequireIntegration(t)
 	ctx := context.Background()
 	postgres, err := database.NewPool(ctx, database.Config{
-		Host: "localhost", Port: "5432", User: "horus", Password: "horus", Name: "horus",
+		Host: testutil.Env("HORUS_DB_HOST", "localhost"), Port: testutil.Env("HORUS_DB_PORT", "5432"), User: testutil.Env("HORUS_DB_USER", "horus"), Password: testutil.Env("HORUS_DB_PASSWORD", "horus"), Name: testutil.Env("HORUS_DB_NAME", "horus"),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer postgres.Close()
-	redis := queue.NewRedis(queue.Config{Host: "localhost", Port: "6379"})
+	redis := database.NewRedis(database.RedisConfig{Host: testutil.Env("HORUS_REDIS_HOST", "localhost"), Port: testutil.Env("HORUS_REDIS_PORT", "6379")})
 	defer redis.Close()
 	recorder := httptest.NewRecorder()
 	readyHandler(postgres, redis)(recorder, httptest.NewRequest(http.MethodGet, "/ready", nil))
