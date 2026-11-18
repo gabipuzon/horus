@@ -21,6 +21,9 @@ uses Redis to hand scheduled checks to a bounded worker pool.
 
 ## Architecture
 
+For an isolated, repeatable capacity test with a mock target and scheduling-lag
+report, see [bench/README.md](bench/README.md).
+
 ```text
 Browser ──> Nginx static React app
                 └── /api/* ──> Go API ──> PostgreSQL monitors, checks, incidents
@@ -103,6 +106,7 @@ allows passwordless authentication.
 | `HORUS_REDIS_PORT` | `6379` | Redis port |
 | `HORUS_HTTP_ADDR` | `:8080` | HTTP listen address |
 | `HORUS_WORKER_COUNT` | `3` | Worker count, allowed 1–1000 |
+| `HORUS_ALLOW_PRIVATE_TARGETS` | `false` | Permit checks of private IP targets; use only in an isolated trusted test environment |
 | `HORUS_DISCORD_WEBHOOK_URL` | empty | Optional absolute HTTP(S) URL; empty disables notifications |
 | `HORUS_DB_PUBLISH_PORT` | `5432` | Localhost PostgreSQL port for development |
 | `HORUS_REDIS_PUBLISH_PORT` | `6379` | Localhost Redis port for development |
@@ -243,7 +247,7 @@ startup; Horus exits if either initial check fails.
 
 SIGINT and SIGTERM cancel the scheduler and workers. An idle Redis dequeue
 uses a finite one-second blocking wait so workers can exit promptly. After
-joining workers, Horus gives HTTP shutdown up to five seconds.
+joining workers and the scheduler, Horus gives HTTP shutdown up to five seconds.
 
 ## Development
 
@@ -303,16 +307,20 @@ npm run lint
 With local PostgreSQL and Redis running and migrations applied:
 
 ```bash
-go test ./...
-go test -race ./...
+HORUS_TEST_INTEGRATION=1 go test ./...
+HORUS_TEST_INTEGRATION=1 go test -race ./...
 go vet ./...
 go build ./...
 docker compose build
 ```
 
-Repository and queue integration tests use real local services. GitHub
-Actions runs on pushes to `main` and pull requests targeting `main`. Its
-single workflow starts healthy PostgreSQL and Redis services, applies
+Repository and queue integration tests use real services. They skip in a
+default local `go test ./...` run; set `HORUS_TEST_INTEGRATION=1` after starting
+PostgreSQL and Redis and applying migrations to run them. They read the same
+`HORUS_DB_*` and `HORUS_REDIS_*` variables as the application, allowing
+isolated test ports. GitHub Actions sets the integration flag and runs on pushes
+to `main` and pull requests targeting `main`. Its single workflow starts healthy
+PostgreSQL and Redis services, applies
 migrations with `cmd/migrate`, then runs tests, race tests, vet, and Go build.
 It also installs frontend dependencies, runs its tests, lint, and build, then
 builds both production images with Compose. CI does not deploy or publish
@@ -323,15 +331,6 @@ docker compose build
 docker compose up -d
 docker compose ps
 ```
-
-## Screenshots
-
-These were captured from the production Nginx image against a running Horus
-stack and a temporary example monitor.
-
-| Overview | Monitors | Monitor detail |
-|---|---|---|
-| ![Overview](docs/screenshots/overview.png) | ![Monitor list](docs/screenshots/monitors.png) | ![Monitor detail](docs/screenshots/monitor-detail.png) |
 
 ## What this repository demonstrates
 
