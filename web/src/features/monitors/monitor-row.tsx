@@ -21,21 +21,20 @@ export function MonitorRow({ monitor, onChanged }: { monitor: Monitor; onChanged
   })
 
   return <>
-    <tr className={`border-b border-border/75 last:border-0 hover:bg-surface-raised/35 ${monitor.enabled ? '' : 'text-muted-foreground'}`}>
-      <td className="whitespace-nowrap px-5 py-3.5"><span className="inline-flex items-center gap-2 text-xs font-medium tracking-wide"><span aria-hidden="true" className={`text-base leading-none ${monitor.enabled ? 'text-muted-foreground' : 'text-status-disabled'}`}>{monitor.enabled ? '●' : '○'}</span>{monitor.enabled ? 'ENABLED' : 'DISABLED'}</span></td>
-      <td className="max-w-48 truncate px-5 py-3.5 font-medium text-foreground" title={monitor.name}><Link className="rounded text-foreground hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent" to={`/monitors/${monitor.id}`}>{monitor.name}</Link></td>
-      <td className="max-w-72 truncate px-5 py-3.5 font-mono text-xs text-muted-foreground" title={monitor.url}>{monitor.url}</td>
-      <td className="whitespace-nowrap px-5 py-3.5 text-right tabular-nums">{monitor.interval_seconds} s</td>
-      <td className="whitespace-nowrap px-5 py-3.5 text-right tabular-nums">{monitor.timeout_seconds} s</td>
-      <td className="px-5 py-3.5 text-right font-mono tabular-nums">{monitor.expected_status}</td>
-      <td className="px-5 py-2.5 text-right">
-        <div className="flex items-center justify-end gap-1">
-          <Button variant="ghost" size="sm" disabled={toggle.isPending || remove.isPending} aria-label={`${monitor.enabled ? 'Disable' : 'Enable'} ${monitor.name}`} onClick={() => { setActionError(''); toggle.mutate() }}><Power size={14} /><span className="hidden xl:inline">{toggle.isPending ? 'Saving…' : monitor.enabled ? 'Disable' : 'Enable'}</span></Button>
-          <Button variant="ghost" size="icon" className="hover:text-status-down" aria-label={`Delete ${monitor.name}`} disabled={toggle.isPending || remove.isPending} onClick={() => { remove.reset(); setConfirmDelete(true) }}><Trash2 size={15} /></Button>
+    <li className="grid min-w-0 gap-2 border-b border-border/75 px-5 py-4 last:border-0 hover:bg-surface-raised/35 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-4 sm:px-6">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1"><Link className="min-w-0 break-words rounded text-base font-medium text-foreground hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent" to={`/monitors/${monitor.id}`}>{monitor.name}</Link><span className="inline-flex items-center gap-1.5 text-[10px] font-medium tracking-wide text-muted-foreground"><span aria-hidden="true" className={`text-sm leading-none ${monitor.enabled ? 'text-muted-foreground' : 'text-status-disabled'}`}>{monitor.enabled ? '●' : '○'}</span>{monitor.enabled ? 'ENABLED' : 'DISABLED'}</span></div>
+        <p className="mt-1 break-all font-mono text-xs leading-5 text-muted-foreground" title={monitor.url}>{monitor.url}</p>
+        <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs tabular-nums text-muted-foreground"><span>Every {monitor.interval_seconds} s</span><span>Timeout {monitor.timeout_seconds} s</span><span>HTTP {monitor.expected_status} expected</span></p>
+      </div>
+      <div className="sm:border-0">
+        <div className="flex items-center gap-1 sm:justify-end">
+          <Button variant="ghost" size="sm" disabled={toggle.isPending || remove.isPending} aria-label={`${monitor.enabled ? 'Disable' : 'Enable'} ${monitor.name}`} onClick={() => { setActionError(''); toggle.mutate() }}><Power size={16} /><span>{toggle.isPending ? 'Saving…' : monitor.enabled ? 'Disable' : 'Enable'}</span></Button>
+          <Button variant="ghost" size="sm" className="hover:text-status-down" aria-label={`Delete ${monitor.name}`} disabled={toggle.isPending || remove.isPending} onClick={() => { remove.reset(); setConfirmDelete(true) }}><Trash2 size={16} /><span>Delete</span></Button>
         </div>
         {actionError && <p role="alert" className="mt-1 max-w-52 text-xs text-status-down">{actionError}</p>}
-      </td>
-    </tr>
+      </div>
+    </li>
     <Dialog open={confirmDelete} onOpenChange={(next) => { if (!remove.isPending) setConfirmDelete(next) }}>
       <DialogContent aria-describedby={`delete-description-${monitor.id}`}>
         <DialogTitle className="pr-7 text-lg font-semibold">Delete “{monitor.name}”?</DialogTitle>

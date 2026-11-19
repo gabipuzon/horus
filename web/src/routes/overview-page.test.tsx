@@ -21,7 +21,7 @@ it('redirects home to Overview and shows an actionable zero-monitor state', asyn
   show()
   expect(await screen.findByRole('heading', { name: 'No monitors yet' })).toBeInTheDocument()
   expect(window.location.pathname).toBe('/overview')
-  await userEvent.click(screen.getByRole('button', { name: 'Add monitor' }))
+  await userEvent.click(screen.getAllByRole('button', { name: 'Add monitor' })[0])
   expect(screen.getByRole('dialog')).toBeInTheDocument()
   expect(within(screen.getByRole('dialog')).getByLabelText('URL')).toBeInTheDocument()
 })
@@ -36,9 +36,11 @@ it('counts monitor configuration, shows a quiet incident state, and links to det
   expect(summary.getByText('Enabled').nextElementSibling).toHaveTextContent('1')
   expect(summary.getByText('Disabled').nextElementSibling).toHaveTextContent('1')
   expect(await screen.findByText('No active incidents')).toBeInTheDocument()
-  expect(screen.getByRole('link', { name: 'Production API' })).toHaveAttribute('href', `/monitors/${monitor.id}`)
+  expect(screen.getAllByRole('link', { name: 'Production API' })[0]).toHaveAttribute('href', `/monitors/${monitor.id}`)
   expect(fetchMock).toHaveBeenCalledWith(`/api/monitors/${monitor.id}/incidents/current`, expect.anything())
   expect(fetchMock).toHaveBeenCalledWith(`/api/monitors/${disabled.id}/incidents/current`, expect.anything())
+  await userEvent.click(screen.getByRole('button', { name: 'Add monitor' }))
+  expect(screen.getByRole('dialog', { name: 'Add monitor' })).toBeInTheDocument()
 })
 
 it('shows an active problem with incident context', async () => {

@@ -73,6 +73,7 @@ describe('monitor dashboard', () => {
     const dialog = screen.getByRole('dialog')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Add monitor' }))
     expect(within(dialog).getByText('Name is required.')).toBeInTheDocument()
+    expect(within(dialog).getByLabelText('Name')).toHaveFocus()
     expect(fetchMock).not.toHaveBeenCalledWith('/api/monitors', expect.objectContaining({ method: 'POST' }))
     await userEvent.type(within(dialog).getByLabelText('Name'), 'Production API')
     await userEvent.type(within(dialog).getByLabelText('URL'), 'https://example.com/health')
