@@ -21,6 +21,7 @@ export const monitorKeys = {
   detail: (id: string) => ['monitors', id] as const,
   summary: (id: string) => ['monitors', id, 'summary'] as const,
   checks: (id: string) => ['monitors', id, 'checks', 50, 0] as const,
+  checksPage: (id: string, page: number) => ['monitors', id, 'checks', 11, page * 10] as const,
   incidents: (id: string) => ['monitors', id, 'incidents', 50, 0] as const,
   currentIncident: (id: string) => ['monitors', id, 'incidents', 'current'] as const,
 }
@@ -29,6 +30,7 @@ export const monitorApi = {
   list: () => apiRequest<Monitor[]>('/monitors'),
   get: (id: string) => apiRequest<Monitor>(`/monitors/${encodeURIComponent(id)}`),
   checks: (id: string) => apiRequest<Check[]>(`/monitors/${encodeURIComponent(id)}/checks?limit=50&offset=0`),
+  checksPage: (id: string, page: number) => apiRequest<Check[]>(`/monitors/${encodeURIComponent(id)}/checks?limit=11&offset=${page * 10}`),
   summary: (id: string) => apiRequest<CheckSummary>(`/monitors/${encodeURIComponent(id)}/summary`),
   incidents: (id: string) => apiRequest<Incident[]>(`/monitors/${encodeURIComponent(id)}/incidents?limit=50&offset=0`),
   currentIncident: async (id: string) => (await apiRequest<Incident | undefined>(`/monitors/${encodeURIComponent(id)}/incidents/current`)) ?? null,

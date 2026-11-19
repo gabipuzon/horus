@@ -18,6 +18,7 @@ function mockApi(overrides: Record<string, () => Response | Promise<Response>> =
     [`/api/monitors/${id}`]: () => json(monitor),
     [`/api/monitors/${id}/summary`]: () => json(summary),
     [`/api/monitors/${id}/checks?limit=50&offset=0`]: () => json(checks),
+    [`/api/monitors/${id}/checks?limit=11&offset=0`]: () => json(checks),
     [`/api/monitors/${id}/incidents/current`]: empty,
     [`/api/monitors/${id}/incidents?limit=50&offset=0`]: () => json([]),
     ...overrides,
@@ -35,14 +36,16 @@ it('renders monitor identity, configuration, summary, checks, and chart data', a
   show()
   expect(await screen.findByRole('heading', { name: 'Production API' })).toBeInTheDocument()
   expect(screen.getByText('● ENABLED')).toBeInTheDocument()
-  expect(screen.getByText('Expected HTTP 200 · Every 30 s · Timeout 5 s')).toBeInTheDocument()
+  expect(screen.getByText('Expected status')).toBeInTheDocument()
+  expect(screen.getByText('Check interval')).toBeInTheDocument()
+  expect(screen.getByText('Timeout')).toBeInTheDocument()
   const metrics = within(await screen.findByRole('region', { name: 'Summary' }))
   expect(await metrics.findByText('50.00%')).toBeInTheDocument()
   expect(metrics.getByText('120 ms')).toBeInTheDocument()
   expect(metrics.getByText('HTTP 503')).toBeInTheDocument()
   const table = within(screen.getByRole('region', { name: 'Recent checks' }))
-  expect(await table.findByText('● Failed')).toBeInTheDocument()
-  expect(table.getByText('Success')).toBeInTheDocument()
+  expect((await table.findAllByText('● Failed')).length).toBeGreaterThan(0)
+  expect(table.getAllByText('Success').length).toBeGreaterThan(0)
   expect(screen.getByRole('img', { name: /highest 240 milliseconds/ })).toBeInTheDocument()
   expect(screen.getByText(/Failed checks with recorded latency are included/)).toBeInTheDocument()
 })
@@ -55,7 +58,7 @@ it('shows 404 and back route', async () => {
 })
 
 it('shows honest no-check summary and empty checks', async () => {
-  mockApi({ [`/api/monitors/${id}/summary`]: () => json({ ...summary, total_checks: 0, latest_status: 0, average_latency_ms: 0, uptime_percentage: null }), [`/api/monitors/${id}/checks?limit=50&offset=0`]: () => json([]) })
+  mockApi({ [`/api/monitors/${id}/summary`]: () => json({ ...summary, total_checks: 0, latest_status: 0, average_latency_ms: 0, uptime_percentage: null }), [`/api/monitors/${id}/checks?limit=50&offset=0`]: () => json([]), [`/api/monitors/${id}/checks?limit=11&offset=0`]: () => json([]) })
   show()
   const metrics = within(await screen.findByRole('region', { name: 'Summary' }))
   expect(await metrics.findAllByText('—')).toHaveLength(3)
@@ -87,13 +90,31 @@ it('loads sections independently and retries a failed summary', async () => {
   show()
   const metrics = within(await screen.findByRole('region', { name: 'Summary' }))
   expect(await metrics.findByText('Could not load summary.')).toBeInTheDocument()
-  expect(await screen.findByText('● Failed')).toBeInTheDocument()
+  expect((await screen.findAllByText('● Failed')).length).toBeGreaterThan(0)
   await userEvent.click(metrics.getByRole('button', { name: 'Retry' }))
   expect(await metrics.findByText('50.00%')).toBeInTheDocument()
 })
 
+it('paginates recent checks through the API', async () => {
+  const firstPage = Array.from({ length: 11 }, (_, index) => ({ ...checks[1], id: `page-one-${index}`, latency_ms: 100 + index }))
+  const secondPage = Array.from({ length: 2 }, (_, index) => ({ ...checks[1], id: `page-two-${index}`, latency_ms: 300 + index }))
+  mockApi({
+    [`/api/monitors/${id}/checks?limit=11&offset=0`]: () => json(firstPage),
+    [`/api/monitors/${id}/checks?limit=11&offset=10`]: () => json(secondPage),
+  })
+  show()
+  const pagination = within(await screen.findByRole('navigation', { name: 'Recent checks pages' }))
+  expect(pagination.getByText('1–10')).toBeInTheDocument()
+  await userEvent.click(pagination.getByRole('button', { name: 'Next' }))
+  const secondPagination = within(await screen.findByRole('navigation', { name: 'Recent checks pages' }))
+  expect(await secondPagination.findByText('11–12')).toBeInTheDocument()
+  expect(secondPagination.getByRole('button', { name: 'Next' })).toBeDisabled()
+  await userEvent.click(secondPagination.getByRole('button', { name: 'Previous' }))
+  expect(await within(await screen.findByRole('navigation', { name: 'Recent checks pages' })).findByText('1–10')).toBeInTheDocument()
+})
+
 it('shows section skeletons while requests are pending', async () => {
-  mockApi({ [`/api/monitors/${id}/summary`]: () => new Promise(() => {}), [`/api/monitors/${id}/checks?limit=50&offset=0`]: () => new Promise(() => {}), [`/api/monitors/${id}/incidents/current`]: () => new Promise(() => {}), [`/api/monitors/${id}/incidents?limit=50&offset=0`]: () => new Promise(() => {}) })
+  mockApi({ [`/api/monitors/${id}/summary`]: () => new Promise(() => {}), [`/api/monitors/${id}/checks?limit=50&offset=0`]: () => new Promise(() => {}), [`/api/monitors/${id}/checks?limit=11&offset=0`]: () => new Promise(() => {}), [`/api/monitors/${id}/incidents/current`]: () => new Promise(() => {}), [`/api/monitors/${id}/incidents?limit=50&offset=0`]: () => new Promise(() => {}) })
   show()
   expect(screen.getByRole('status', { name: 'Loading monitor header' })).toBeInTheDocument()
   await screen.findByRole('heading', { name: 'Production API' })
