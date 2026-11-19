@@ -219,7 +219,12 @@ func (r *Repository) SetEnabled(
 		ctx,
 		`
 		UPDATE monitors
-		SET enabled = $1, updated_at = NOW()
+		SET enabled = $1,
+			next_check_at = CASE
+				WHEN enabled = FALSE AND $1 = TRUE THEN NOW()
+				ELSE next_check_at
+			END,
+			updated_at = NOW()
 		WHERE id = $2
 		`,
 		enabled,

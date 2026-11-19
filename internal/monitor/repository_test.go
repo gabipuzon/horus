@@ -47,6 +47,16 @@ func TestMonitorRepositoryMissingAndAffectedRows(t *testing.T) {
 	if err != nil || !got.Enabled {
 		t.Fatalf("expected enabled monitor, got %+v, %v", got, err)
 	}
+	if err := repository.SetEnabled(ctx, m.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.SetEnabled(ctx, m.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	got, err = repository.GetByID(ctx, m.ID)
+	if err != nil || got.NextCheckAt != got.UpdatedAt {
+		t.Fatalf("next check at expected to reset when re-enabled, got %v, %v", got, err)
+	}
 
 	missingID := uuid.NewString()
 	for _, id := range []string{missingID, "not-a-uuid"} {
