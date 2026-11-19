@@ -31,7 +31,10 @@ func New(
 	timeout time.Duration,
 	expectedStatus int,
 ) (*Monitor, error) {
-	if strings.TrimSpace(name) == "" {
+
+	name = strings.TrimSpace(name)
+
+	if name == "" {
 		return nil, errors.New("monitor name is required")
 	}
 

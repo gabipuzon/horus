@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -68,4 +69,31 @@ func TestNewMonitorRejectsInvalidFields(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNewMonitorTrimsWhitespace(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		monitorName    string
+		url            string
+		interval       time.Duration
+		timeout        time.Duration
+		expectedStatus int
+	}{
+		{name: "trailing white space name", monitorName: "Example  ", url: "https://example.com", interval: time.Minute, timeout: time.Second, expectedStatus: 200},
+		{name: "leading white space name", monitorName: "  Example", url: "https://example.com", interval: time.Minute, timeout: time.Second, expectedStatus: 200},
+		{name: "trailing and leading white space name", monitorName: " Example ", url: "https://example.com", interval: time.Minute, timeout: time.Second, expectedStatus: 200},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			m, err := New(test.monitorName, test.url, test.interval, test.timeout, test.expectedStatus)
+			if err != nil {
+				t.Fatal("expected monitor to be normalized not rejected")
+			}
+
+			if strings.Contains(m.Name, " ") {
+				t.Fatal("expected monitor to be normalized not rejected")
+			}
+		})
+	}
+
 }
