@@ -31,19 +31,32 @@ export function CreateMonitorDialog({ open, onOpenChange, onCreated, showTrigger
     },
   })
 
+  function changeOpen(next: boolean) {
+    if (mutation.isPending) return
+    if (!next) {
+      mutation.reset()
+      setErrors({})
+    }
+    onOpenChange(next)
+  }
+
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const nextErrors = validateMonitor(values)
     setErrors(nextErrors)
-    if (Object.keys(nextErrors).length) return
+    const firstError = Object.keys(nextErrors)[0]
+    if (firstError) {
+      document.getElementById(`monitor-${firstError}`)?.focus()
+      return
+    }
     mutation.mutate(toCreateInput(values))
   }
 
   return <>
-    {showTrigger && <Button onClick={() => { mutation.reset(); onOpenChange(true) }}><Plus size={16} /> Add monitor</Button>}
-    <Dialog open={open} onOpenChange={(next) => { if (!mutation.isPending) onOpenChange(next) }}>
+    {showTrigger && <Button onClick={() => { mutation.reset(); setErrors({}); onOpenChange(true) }}><Plus size={16} /> Add monitor</Button>}
+    <Dialog open={open} onOpenChange={changeOpen}>
       <DialogContent aria-describedby="create-description">
-        <DialogTitle className="text-lg font-semibold">Add monitor</DialogTitle>
+        <DialogTitle className="text-lg font-semibold tracking-tight">Add monitor</DialogTitle>
         <DialogDescription id="create-description" className="mt-1 text-sm text-muted-foreground">Horus will start checking this URL after creation.</DialogDescription>
         <form onSubmit={submit} noValidate className="mt-6 space-y-4">
           {fields.map(({ key, label, hint, inputMode }) => <div key={key}>
@@ -53,7 +66,7 @@ export function CreateMonitorDialog({ open, onOpenChange, onCreated, showTrigger
           </div>)}
           {mutation.isError && <p role="alert" className="rounded border border-status-down/40 bg-status-down/10 px-3 py-2 text-sm text-status-down">{mutation.error.message}</p>}
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>Cancel</Button>
+            <Button type="button" variant="secondary" onClick={() => changeOpen(false)} disabled={mutation.isPending}>Cancel</Button>
             <Button type="submit" disabled={mutation.isPending}>{mutation.isPending ? 'Adding…' : 'Add monitor'}</Button>
           </div>
         </form>
